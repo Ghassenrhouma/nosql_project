@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb_nosql_project
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - nosql_network
+
+  neo4j:
+    image: neo4j:5.15
+    container_name: neo4j_nosql_project
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/password123
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - nosql_network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis_nosql_project
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - nosql_network
+
+  hbase:
+    image: dajobe/hbase
+    container_name: hbase_nosql_project
+    ports:
+      - "16000:16000"  # HBase Master
+      - "16010:16010"  # HBase Master Web UI
+      - "16020:16020"  # HBase RegionServer
+      - "16030:16030"  # HBase RegionServer Web UI
+      - "2181:2181"    # Zookeeper
+      - "9090:9090"    # Thrift
+      - "9095:9095"    # REST API
+    environment:
+      - HBASE_MANAGES_ZK=true
+    volumes:
+      - hbase_data:/hbase-data
+    networks:
+      - nosql_network
+    hostname: hbase
+
+  fuseki:
+    image: stain/jena-fuseki:latest
+    container_name: fuseki_nosql_project
+    ports:
+      - "3030:3030"
+    environment:
+      - ADMIN_PASSWORD=admin123
+      - JVM_ARGS=-Xmx2g
+    volumes:
+      - fuseki_data:/fuseki
+    networks:
+      - nosql_network
+
+volumes:
+  mongodb_data:
+  neo4j_data:
+  redis_data:
+  hbase_data:
+  fuseki_data:
+
+networks:
+  nosql_network:
+    driver: bridge
