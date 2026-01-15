@@ -962,7 +962,12 @@ Table: {translated.get('table', '')}"""
                 st.json(first_result)
         else:
             # This is a query result
-            st.success(f"Found {result.get('count', 0)} results")
+            total_count = result.get('count', 0)
+            display_count = min(len(results_data) if results_data else 0, 10)
+            if total_count > display_count:
+                st.success(f"Found {total_count} results (showing first {display_count})")
+            else:
+                st.success(f"Found {total_count} results")
 
             # Display sample results
             if results_data:
@@ -1101,7 +1106,13 @@ def display_comparison_results(query: str, results: dict):
             exec_data = data['execution']
             with col2:
                 if exec_data['success']:
-                    st.success(f"✅ Execution ({exec_data['result_count']} results)")
+                    # Show total count, but clarify if showing samples
+                    total_count = exec_data['result_count']
+                    sample_count = len(exec_data.get('sample_results', []))
+                    if total_count > sample_count and sample_count > 0:
+                        st.success(f"✅ Execution ({total_count} total)")
+                    else:
+                        st.success(f"✅ Execution ({total_count} results)")
                 else:
                     st.error("❌ Execution")
                     st.write(f"Error: {exec_data.get('error', 'Unknown')}")
@@ -1202,7 +1213,12 @@ def display_comparison_results(query: str, results: dict):
             # Show sample results (but not for update operations)
             is_update_operation = operation in ['update_node', 'update_one', 'update_many', 'find_and_update', 'update', 'delete_node', 'delete_one', 'delete_many', 'find_and_delete', 'delete']
             if exec_data['success'] and exec_data.get('sample_results') and not is_update_operation:
-                st.markdown("**Sample Results:**")
+                total_count = exec_data['result_count']
+                sample_count = len(exec_data['sample_results'])
+                if total_count > sample_count:
+                    st.markdown(f"**Sample Results (showing {sample_count} of {total_count}):**")
+                else:
+                    st.markdown(f"**Results ({sample_count}):**")
                 formatted_samples = format_results_for_display(exec_data['sample_results'], 3, db_key)
                 if formatted_samples:
                     df = pd.DataFrame(formatted_samples)
