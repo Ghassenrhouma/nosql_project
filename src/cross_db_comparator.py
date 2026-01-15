@@ -110,7 +110,18 @@ class CrossDatabaseComparator:
                         'director': translated.get('director'),
                         'actor': translated.get('actor'),
                         'document': translated.get('document'),
-                        'update': translated.get('update')
+                        'update': translated.get('update'),
+                        # Neo4j create_node/update_node/delete_node fields
+                        'label': translated.get('label'),
+                        'properties': translated.get('properties'),
+                        'match_properties': translated.get('match_properties'),
+                        'update_properties': translated.get('update_properties'),
+                        # RDF/Redis/HBase create/update fields
+                        'title': translated.get('title'),
+                        'genres': translated.get('genres'),
+                        'field': translated.get('field'),
+                        'value': translated.get('value'),
+                        'subject': translated.get('subject')
                     },
                     'execution': {
                         'success': execution_result.get('success', False) if execution_result else False,

@@ -472,6 +472,14 @@ class QueryExecutor:
                         movie_data['plot'] = query_dict['plot']
                     if 'rating' in query_dict:
                         movie_data['imdb_rating'] = str(query_dict['rating'])
+                    if 'director' in query_dict:
+                        movie_data['directors'] = query_dict['director']
+                    if 'directors' in query_dict:
+                        movie_data['directors'] = query_dict['directors']
+                    if 'cast' in query_dict:
+                        movie_data['cast'] = query_dict['cast']
+                    if 'actors' in query_dict:
+                        movie_data['cast'] = query_dict['actors']
                     
                     # Store the movie
                     for field, value in movie_data.items():
@@ -512,35 +520,53 @@ class QueryExecutor:
                         for key in keys:
                             key_str = key.decode('utf-8') if isinstance(key, bytes) else key
                             
-                            # Skip sorted set index keys
-                            if key_str in ['movies:by_rating', 'movies:by_year']:
+                            # Skip sorted set index keys and related keys (we'll delete them separately)
+                            if key_str in ['movies:by_rating', 'movies:by_year'] or ':cast' in key_str or ':directors' in key_str or ':genres' in key_str:
                                 continue
                             
                             # Get the hash data for this movie
                             movie_data = conn.hgetall(key_str)
                             if movie_data and movie_data.get('title', '').lower() == title.lower():
-                                # Found the movie - delete it
-                                deleted_count = conn.delete(key_str)
-                                deleted_keys = [key_str]
+                                # Found the movie - delete it and all related keys
+                                # Delete the main hash
+                                deleted_count += conn.delete(key_str)
+                                deleted_keys.append(key_str)
                                 
-                                # Also remove from sorted sets
+                                # Delete related keys (cast, directors, genres lists)
+                                related_keys = [
+                                    f"{key_str}:cast",
+                                    f"{key_str}:directors",
+                                    f"{key_str}:genres"
+                                ]
+                                for related_key in related_keys:
+                                    if conn.client.exists(related_key):
+                                        deleted_count += conn.delete(related_key)
+                                        deleted_keys.append(related_key)
+                                
+                                # Remove from sorted sets
                                 conn.client.zrem('movies:by_rating', key_str)
                                 conn.client.zrem('movies:by_year', key_str)
                                 
-                                self.logger.info(f"Deleted movie {key_str}")
-                                break
+                                # Remove from genre sets
+                                if movie_data.get('genres'):
+                                    genres = movie_data.get('genres').split(',') if ',' in movie_data.get('genres', '') else [movie_data.get('genres')]
+                                    for genre in genres:
+                                        genre = genre.strip()
+                                        conn.client.srem(f"genre:{genre}:movies", key_str)
+                                
+                                self.logger.info(f"Deleted movie {key_str} and {len(deleted_keys)-1} related keys")
                         
-                        if deleted_keys or cursor == 0:
+                        if cursor == 0:
                             break
                     
                     if not deleted_keys:
                         self.logger.warning(f"Movie '{title}' not found")
                         return {'success': False, 'error': f'Movie "{title}" not found'}
                     
-                    self.logger.info(f"Deleted {deleted_count} keys for '{title}'")
+                    self.logger.info(f"Deleted {len(deleted_keys)} keys for '{title}'")
                     return {
                         'success': True,
-                        'results': [{'deleted_count': deleted_count, 'keys': deleted_keys, 'title': title}],
+                        'results': [{'deleted_count': len(deleted_keys), 'keys': deleted_keys, 'title': title}],
                         'count': 1
                     }
                 
@@ -1015,30 +1041,63 @@ class QueryExecutor:
                     # Create movie URI (replace spaces with underscores)
                     movie_uri = f"http://example.org/movie/{title.replace(' ', '_')}"
                     
-                    # Build INSERT query
-                    insert_query = f"""
-                    PREFIX ex: <http://example.org/>
-                    INSERT DATA {{
-                        <{movie_uri}> a ex:Movie ;
-                                      ex:title "{title}" ;
-                                      ex:year "{year}" .
-                    }}
-                    """
+                    # Build INSERT query with all provided fields
+                    triples = []
+                    triples.append(f"<{movie_uri}> a ex:Movie")
+                    triples.append(f"<{movie_uri}> ex:title \"{title}\"")
+                    triples.append(f"<{movie_uri}> ex:year \"{year}\"")
                     
-                    # Add genre if provided
+                    # Add optional fields
+                    if 'plot' in query_dict and query_dict['plot']:
+                        # Escape quotes in plot
+                        plot_escaped = query_dict['plot'].replace('"', '\\"')
+                        triples.append(f"<{movie_uri}> ex:plot \"{plot_escaped}\"")
+                    
+                    if 'rating' in query_dict and query_dict['rating']:
+                        triples.append(f"<{movie_uri}> ex:imdbRating \"{query_dict['rating']}\"")
+                    
+                    # Add genre
                     if genres:
                         genre_uri = f"http://example.org/genre/{genres.replace(' ', '_')}"
-                        insert_query = f"""
-                        PREFIX ex: <http://example.org/>
-                        INSERT DATA {{
-                            <{movie_uri}> a ex:Movie ;
-                                          ex:title "{title}" ;
-                                          ex:year "{year}" ;
-                                          ex:hasGenre <{genre_uri}> .
-                            <{genre_uri}> a ex:Genre ;
-                                          ex:name "{genres}" .
-                        }}
-                        """
+                        triples.append(f"<{movie_uri}> ex:hasGenre <{genre_uri}>")
+                        triples.append(f"<{genre_uri}> a ex:Genre")
+                        triples.append(f"<{genre_uri}> ex:name \"{genres}\"")
+                    
+                    # Add director(s)
+                    director_names = []
+                    if 'director' in query_dict and query_dict['director']:
+                        directors_str = query_dict['director']
+                        # Handle comma-separated directors
+                        director_names = [d.strip().strip("'\"") for d in directors_str.split(',')]
+                    elif 'directors' in query_dict and query_dict['directors']:
+                        directors_str = query_dict['directors']
+                        director_names = [d.strip().strip("'\"") for d in directors_str.split(',')]
+                    
+                    for director_name in director_names:
+                        if director_name:
+                            director_uri = f"http://example.org/person/{director_name.replace(' ', '_')}"
+                            triples.append(f"<{movie_uri}> ex:directedBy <{director_uri}>")
+                            triples.append(f"<{director_uri}> a ex:Person")
+                            triples.append(f"<{director_uri}> ex:name \"{director_name}\"")
+                    
+                    # Add cast/actors
+                    actor_names = []
+                    if 'cast' in query_dict and query_dict['cast']:
+                        actors_str = query_dict['cast']
+                        actor_names = [a.strip().strip("'\"") for a in actors_str.split(',')]
+                    elif 'actors' in query_dict and query_dict['actors']:
+                        actors_str = query_dict['actors']
+                        actor_names = [a.strip().strip("'\"") for a in actors_str.split(',')]
+                    
+                    for actor_name in actor_names:
+                        if actor_name:
+                            actor_uri = f"http://example.org/person/{actor_name.replace(' ', '_')}"
+                            triples.append(f"<{movie_uri}> ex:starring <{actor_uri}>")
+                            triples.append(f"<{actor_uri}> a ex:Person")
+                            triples.append(f"<{actor_uri}> ex:name \"{actor_name}\"")
+                    
+                    # Build the INSERT query
+                    insert_query = "PREFIX ex: <http://example.org/>\nINSERT DATA {\n    " + " .\n    ".join(triples) + " .\n}"
                     
                     success = conn.execute_update(insert_query)
                     self.logger.info(f"Created movie {movie_uri}: {title}")
@@ -1053,6 +1112,14 @@ class QueryExecutor:
                     if genres:
                         result_data['genreName'] = genres
                         result_data['genres'] = [genres]
+                    if 'plot' in query_dict:
+                        result_data['plot'] = query_dict['plot']
+                    if 'rating' in query_dict:
+                        result_data['rating'] = query_dict['rating']
+                    if director_names:
+                        result_data['directorName'] = ', '.join(director_names)
+                    if actor_names:
+                        result_data['actorName'] = ', '.join(actor_names)
                     
                     return {
                         'success': True,
@@ -1604,6 +1671,14 @@ class QueryExecutor:
                     data['info:plot'] = query_dict['plot']
                 if 'rating' in query_dict:
                     data['ratings:imdb_rating'] = str(query_dict['rating'])
+                if 'director' in query_dict:
+                    data['people:directors'] = query_dict['director']
+                if 'directors' in query_dict:
+                    data['people:directors'] = query_dict['directors']
+                if 'cast' in query_dict:
+                    data['people:cast'] = query_dict['cast']
+                if 'actors' in query_dict:
+                    data['people:cast'] = query_dict['actors']
                 
                 # Insert the movie
                 try:
@@ -1635,22 +1710,27 @@ class QueryExecutor:
                 if not title:
                     return {'success': False, 'error': 'find_and_delete requires title'}
                 
-                # Scan to find the movie by title
+                # Scan to find ALL movies with this title
                 results = conn.scan(table, columns=[], limit=1000)
-                deleted = False
-                row_key = None
+                deleted_rows = []
                 
                 for row in results:
                     data = row.get('data', {})
                     if data.get('info:title', '').lower() == title.lower():
                         row_key = row.get('row_key')
                         deleted = conn.delete(table, row_key)
-                        break
+                        if deleted:
+                            deleted_rows.append(row_key)
+                            self.logger.info(f"Deleted HBase row: {row_key}")
                 
-                self.logger.info(f"Deleted row for '{title}': {deleted}")
+                if not deleted_rows:
+                    self.logger.warning(f"Movie '{title}' not found in HBase table '{table}'")
+                    return {'success': False, 'error': f'Movie "{title}" not found'}
+                
+                self.logger.info(f"Deleted {len(deleted_rows)} row(s) for '{title}'")
                 return {
                     'success': True,
-                    'results': [{'deleted': deleted, 'row_key': row_key, 'title': title}],
+                    'results': [{'deleted_count': len(deleted_rows), 'row_keys': deleted_rows, 'title': title}],
                     'count': 1
                 }
             

@@ -1118,9 +1118,47 @@ def display_comparison_results(query: str, results: dict):
                 # For Neo4j filter operations, get the generated Cypher from execution result
                 if db_key == 'neo4j' and operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple']:
                     query_text = exec_data.get('cypher', 'No query generated')
+                # For Neo4j create operations, show operation details
+                elif db_key == 'neo4j' and operation == 'create_node':
+                    query_text = f"Operation: {operation}\n"
+                    if 'label' in trans:
+                        query_text += f"Label: {trans['label']}\n"
+                    if 'properties' in trans:
+                        query_text += f"Properties: {trans['properties']}\n"
+                # For Neo4j update/delete operations, show operation details
+                elif db_key == 'neo4j' and operation in ['update_node', 'delete_node']:
+                    query_text = f"Operation: {operation}\n"
+                    if 'label' in trans:
+                        query_text += f"Label: {trans['label']}\n"
+                    if 'match_properties' in trans:
+                        query_text += f"Match: {trans['match_properties']}\n"
+                    if 'update_properties' in trans:
+                        query_text += f"Update: {trans['update_properties']}\n"
+                    if 'properties' in trans:
+                        query_text += f"Properties: {trans['properties']}\n"
                 # For RDF filter operations, get the generated SPARQL from execution result
                 elif db_key == 'rdf' and operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple']:
                     query_text = exec_data.get('sparql', 'No query generated')
+                # For RDF create operations, show operation details
+                elif db_key == 'rdf' and operation == 'create':
+                    query_text = f"Operation: {operation}\n"
+                    if 'title' in trans:
+                        query_text += f"Title: {trans['title']}\n"
+                    if 'year' in trans:
+                        query_text += f"Year: {trans['year']}\n"
+                    if 'genres' in trans:
+                        query_text += f"Genres: {trans['genres']}\n"
+                # For RDF update/delete operations, show operation details
+                elif db_key == 'rdf' and operation in ['find_and_update', 'find_and_delete', 'delete', 'update']:
+                    query_text = f"Operation: {operation}\n"
+                    if 'title' in trans:
+                        query_text += f"Title: {trans['title']}\n"
+                    if 'field' in trans:
+                        query_text += f"Field: {trans['field']}\n"
+                    if 'value' in trans:
+                        query_text += f"Value: {trans['value']}\n"
+                    if 'subject' in trans:
+                        query_text += f"Subject: {trans['subject']}\n"
                 # For MongoDB CRUD operations, show operation details
                 elif db_key == 'mongodb' and operation in ['insert_one', 'insert_many', 'update_one', 'update_many', 'delete_one', 'delete_many']:
                     query_text = f"Operation: {operation}\n"
@@ -1145,6 +1183,12 @@ def display_comparison_results(query: str, results: dict):
                         query_text += f"Director: {trans['director']}\n"
                     if 'actor' in trans:
                         query_text += f"Actor: {trans['actor']}\n"
+                    if 'title' in trans:
+                        query_text += f"Title: {trans['title']}\n"
+                    if 'field' in trans:
+                        query_text += f"Field: {trans['field']}\n"
+                    if 'value' in trans:
+                        query_text += f"Value: {trans['value']}\n"
                 else:
                     # Default: get query from translation
                     query_text = trans.get('query') or trans.get('cypher') or trans.get('sparql') or str(trans.get('commands', ''))
@@ -1155,8 +1199,9 @@ def display_comparison_results(query: str, results: dict):
                 if trans.get('explanation'):
                     st.info(f"💡 {trans['explanation']}")
 
-            # Show sample results
-            if exec_data['success'] and exec_data.get('sample_results'):
+            # Show sample results (but not for update operations)
+            is_update_operation = operation in ['update_node', 'update_one', 'update_many', 'find_and_update', 'update', 'delete_node', 'delete_one', 'delete_many', 'find_and_delete', 'delete']
+            if exec_data['success'] and exec_data.get('sample_results') and not is_update_operation:
                 st.markdown("**Sample Results:**")
                 formatted_samples = format_results_for_display(exec_data['sample_results'], 3, db_key)
                 if formatted_samples:

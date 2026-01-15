@@ -179,13 +179,14 @@ Update/Delete Rules:
 Examples:
 1. "Find all movies from 2015" → {{"collection": "movies", "operation": "find", "query": {{"year": 2015}}, "projection": {{}}, "limit": 10, "explanation": "Find movies from 2015"}}
 2. "Show me action movies" → {{"collection": "movies", "operation": "find", "query": {{"genres": "Action"}}, "projection": {{}}, "limit": 10, "explanation": "Find action movies"}}
-3. "Find movies with rating above 8" → {{"collection": "movies", "operation": "find", "query": {{"imdb.rating": {{"$gte": 8}}}}, "projection": {{}}, "limit": 10, "explanation": "Find highly rated movies"}}
-4. "Change The Birth of a Nation genre to Action" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "The Birth of a Nation"}}, "update": {{"$set": {{"genres": ["Action"]}}}}, "explanation": "Update movie genre to Action"}}
-5. "Update Inception rating to 9.5" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "Inception"}}, "update": {{"$set": {{"imdb.rating": 9.5}}}}, "explanation": "Update movie rating"}}
-6. "Delete the movie Titanic" → {{"collection": "movies", "operation": "delete_one", "query": {{"title": "Titanic"}}, "explanation": "Delete movie Titanic"}}
-7. "Remove all movies from 1990" → {{"collection": "movies", "operation": "delete_many", "query": {{"year": 1990}}, "explanation": "Delete all movies from 1990"}}
-8. "Add film Influencers from 2025" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Insert new movie"}}
-9. "Create movie Test with year 2020" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Test", "year": 2020, "genres": ["Unknown"]}}, "explanation": "Insert new movie"}}
+3. "Show me the details of hamnet" → {{"collection": "movies", "operation": "find", "query": {{"title": {{"$regex": "^hamnet$", "$options": "i"}}}}, "projection": {{}}, "limit": 10, "explanation": "Find movie by exact title (case-insensitive)"}}
+4. "Find movies with rating above 8" → {{"collection": "movies", "operation": "find", "query": {{"imdb.rating": {{"$gte": 8}}}}, "projection": {{}}, "limit": 10, "explanation": "Find highly rated movies"}}
+5. "Change The Birth of a Nation genre to Action" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "The Birth of a Nation"}}, "update": {{"$set": {{"genres": ["Action"]}}}}, "explanation": "Update movie genre to Action"}}
+6. "Update Inception rating to 9.5" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "Inception"}}, "update": {{"$set": {{"imdb.rating": 9.5}}}}, "explanation": "Update movie rating"}}
+7. "Delete the movie Titanic" → {{"collection": "movies", "operation": "delete_one", "query": {{"title": "Titanic"}}, "explanation": "Delete movie Titanic"}}
+8. "Remove all movies from 1990" → {{"collection": "movies", "operation": "delete_many", "query": {{"year": 1990}}, "explanation": "Delete all movies from 1990"}}
+9. "Add film Influencers from 2025" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Insert new movie"}}
+10. "Create movie Test with year 2020" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Test", "year": 2020, "genres": ["Unknown"]}}, "explanation": "Insert new movie"}}
 
 Important: Return ONLY the JSON object, no text before or after."""
 
@@ -273,15 +274,17 @@ CRUD Operations:
 
 Examples:
 1. "Find all movies" → {{"cypher": "MATCH (m:Movie) OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m) OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m) RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast LIMIT 10", "parameters": {{}}, "explanation": "Find all movies with directors and cast"}}
-2. "Drama movies" → {{"operation": "filter_by_genre", "genre": "Drama", "explanation": "Filter movies by Drama genre"}}
-3. "Movies from 1927" → {{"operation": "filter_by_year", "year": 1927, "explanation": "Filter movies from 1927"}}
-4. "Movies by Frank Borzage" → {{"operation": "filter_by_director", "director": "Frank Borzage", "explanation": "Filter movies by director Frank Borzage"}}
-5. "Drama movies from 1925" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1925}}, "explanation": "Filter Drama movies from 1925"}}
-6. "Movies by Frank Borzage from 1927" → {{"operation": "filter_by_multiple", "filters": {{"director": "Frank Borzage", "year": 1927}}, "explanation": "Filter movies by Frank Borzage from 1927"}}
-7. "Update The Birth of a Nation genre to Action" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "The Birth of a Nation"}}, "update_properties": {{"genres": ["Action"]}}, "explanation": "Update movie genre to Action"}}
-8. "Change Inception rating to 9.5" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "Inception"}}, "update_properties": {{"imdb_rating": 9.5}}, "explanation": "Update movie rating"}}
-9. "Add film Influencers from 2025" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Create new movie node"}}
-10. "Delete the movie Titanic" → {{"operation": "delete_node", "label": "Movie", "properties": {{"title": "Titanic"}}, "explanation": "Delete movie node and its relationships"}}
+2. "Show me the details of hamnet" → {{"cypher": "MATCH (m:Movie) WHERE toLower(m.title) = toLower($title) OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m) OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m) RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast", "parameters": {{"title": "hamnet"}}, "explanation": "Find movie by title with all details"}}
+3. "Drama movies" → {{"operation": "filter_by_genre", "genre": "Drama", "explanation": "Filter movies by Drama genre"}}
+4. "Movies from 1927" → {{"operation": "filter_by_year", "year": 1927, "explanation": "Filter movies from 1927"}}
+5. "Movies by Frank Borzage" → {{"operation": "filter_by_director", "director": "Frank Borzage", "explanation": "Filter movies by director Frank Borzage"}}
+6. "Drama movies from 1925" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1925}}, "explanation": "Filter Drama movies from 1925"}}
+7. "Movies by Frank Borzage from 1927" → {{"operation": "filter_by_multiple", "filters": {{"director": "Frank Borzage", "year": 1927}}, "explanation": "Filter movies by Frank Borzage from 1927"}}
+8. "Update The Birth of a Nation genre to Action" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "The Birth of a Nation"}}, "update_properties": {{"genres": ["Action"]}}, "explanation": "Update movie genre to Action"}}
+9. "Change Inception rating to 9.5" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "Inception"}}, "update_properties": {{"imdb_rating": 9.5}}, "explanation": "Update movie rating"}}
+10. "Add film Influencers from 2025" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Create new movie node"}}
+11. "Add drama film Hamlet from 2025 by Kenneth Branagh with actors Tom Hiddleston, Jessica Chastain, plot 'A modern retelling' and rating 8.5" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Hamlet", "year": 2025, "genres": ["Drama"], "plot": "A modern retelling", "imdb_rating": 8.5, "director": "Kenneth Branagh", "cast": "Tom Hiddleston, Jessica Chastain"}}, "explanation": "Create new movie node with all details"}}
+12. "Delete the movie Titanic" → {{"operation": "delete_node", "label": "Movie", "properties": {{"title": "Titanic"}}, "explanation": "Delete movie node and its relationships"}}
 
 IMPORTANT: 
 - Always use OPTIONAL MATCH to fetch directors and cast
@@ -389,10 +392,11 @@ Examples:
 9. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
 10. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
 11. "Insert movie Test with year 2020 and genre Action" → {{"operation": "create", "title": "Test", "year": 2020, "genres": "Action", "explanation": "Create new movie"}}
-12. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-13. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-14. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genres", "value": "Action", "explanation": "Update movie genre"}}
-15. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+12. "Add drama film Hamlet from 2025 by Kenneth Branagh with actors Tom Hiddleston, Jessica Chastain, plot 'A modern retelling' and rating 8.5" → {{"operation": "create", "title": "Hamlet", "year": 2025, "genres": "Drama", "director": "Kenneth Branagh", "cast": "Tom Hiddleston, Jessica Chastain", "plot": "A modern retelling", "rating": 8.5, "explanation": "Create new movie with all details"}}
+13. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+14. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+15. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genres", "value": "Action", "explanation": "Update movie genre"}}
+16. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 
@@ -514,11 +518,12 @@ Examples:
 7. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
 8. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
 9. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
-10. "Insert movie Test with year 2020" → {{"operation": "create", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
-11. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-12. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-13. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
-14. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+10. "Add drama film Hamlet from 2025 by Kenneth Branagh with actors Tom Hiddleston, Jessica Chastain, plot 'A modern retelling' and rating 8.5" → {{"operation": "create", "title": "Hamlet", "year": 2025, "genres": "Drama", "director": "Kenneth Branagh", "cast": "Tom Hiddleston, Jessica Chastain", "plot": "A modern retelling", "rating": 8.5, "explanation": "Create new movie with all details"}}
+11. "Insert movie Test with year 2020" → {{"operation": "create", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+12. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+13. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+14. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+15. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Important: 
 - Use string literals for years like "1915", never use ^^xsd:integer
@@ -640,11 +645,12 @@ Examples:
 9. "Show me the details of Influencers" → {{"operation": "find", "table": "movies", "title": "Influencers", "explanation": "Find movie by title"}}
 10. "Get movie Inception" → {{"operation": "find", "table": "movies", "title": "Inception", "explanation": "Find movie by title"}}
 11. "Add film Influencers from 2025" → {{"operation": "create", "table": "movies", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
-12. "Insert movie Test with year 2020" → {{"operation": "create", "table": "movies", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
-13. "Delete influencers" → {{"operation": "find_and_delete", "table": "movies", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-14. "Remove the movie Titanic" → {{"operation": "find_and_delete", "table": "movies", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-15. "Change influencers genre to action" → {{"operation": "find_and_update", "table": "movies", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
-16. "Update Inception year to 2020" → {{"operation": "find_and_update", "table": "movies", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+12. "Add drama film Hamlet from 2025 by Kenneth Branagh with actors Tom Hiddleston, Jessica Chastain, plot 'A modern retelling' and rating 8.5" → {{"operation": "create", "table": "movies", "title": "Hamlet", "year": 2025, "genres": "Drama", "director": "Kenneth Branagh", "cast": "Tom Hiddleston, Jessica Chastain", "plot": "A modern retelling", "rating": 8.5, "explanation": "Create new movie with all details"}}
+13. "Insert movie Test with year 2020" → {{"operation": "create", "table": "movies", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+14. "Delete influencers" → {{"operation": "find_and_delete", "table": "movies", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+15. "Remove the movie Titanic" → {{"operation": "find_and_delete", "table": "movies", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+16. "Change influencers genre to action" → {{"operation": "find_and_update", "table": "movies", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+17. "Update Inception year to 2020" → {{"operation": "find_and_update", "table": "movies", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 
