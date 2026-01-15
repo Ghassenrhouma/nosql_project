@@ -125,6 +125,23 @@ For aggregations, use:
     "explanation": "Brief explanation"
 }}
 
+For updates, use:
+{{
+    "collection": "movies",
+    "operation": "update_one",
+    "query": {{"title": "Movie Title"}},
+    "update": {{"$set": {{"genres": ["Action"]}}}},
+    "explanation": "Brief explanation"
+}}
+
+For deletes, use:
+{{
+    "collection": "movies",
+    "operation": "delete_one",
+    "query": {{"title": "Movie Title"}},
+    "explanation": "Brief explanation"
+}}
+
 MongoDB Query Rules:
 - Collection is almost always "movies"
 - Use operators: $eq, $gt, $gte, $lt, $lte, $in, $regex
@@ -134,11 +151,28 @@ MongoDB Query Rules:
 - For "movies from year": {{"year": 2015}}
 - For "movies with rating above X": {{"imdb.rating": {{"$gte": X}}}}
 - For "action movies": {{"genres": "Action"}}
+- IMPORTANT: Leave "projection" empty {{}} to return ALL fields, or specify fields to include like {{"title": 1, "year": 1}}
+- For best results, use empty projection {{}} to get all movie data
+
+Update/Delete Rules:
+- IMPORTANT: Detect keywords "update", "change", "modify", "replace", "set" → use update operations
+- IMPORTANT: Detect keywords "delete", "remove" → use delete operations
+- IMPORTANT: Detect keywords "add", "insert", "create" → use insert operations
+- For updates: Use "update_one" (single doc) or "update_many" (multiple docs)
+- Update operators: $set (replace/add field), $unset (remove field), $push (add to array), $pull (remove from array)
+- For deletes: Use "delete_one" (single doc) or "delete_many" (multiple docs)
+- Always specify the correct query to match the document(s)
+- IMPORTANT: genres field must ALWAYS be an array like ["Action"], never just "Action"
+- IMPORTANT: year field must be a number, not a string
 
 Examples:
-1. "Find all movies from 2015" → {{"collection": "movies", "operation": "find", "query": {{"year": 2015}}, "limit": 10}}
-2. "Show me action movies" → {{"collection": "movies", "operation": "find", "query": {{"genres": "Action"}}, "limit": 10}}
-3. "Find movies with rating above 8" → {{"collection": "movies", "operation": "find", "query": {{"imdb.rating": {{"$gte": 8}}}}, "limit": 10}}
+1. "Find all movies from 2015" → {{"collection": "movies", "operation": "find", "query": {{"year": 2015}}, "projection": {{}}, "limit": 10, "explanation": "Find movies from 2015"}}
+2. "Show me action movies" → {{"collection": "movies", "operation": "find", "query": {{"genres": "Action"}}, "projection": {{}}, "limit": 10, "explanation": "Find action movies"}}
+3. "Find movies with rating above 8" → {{"collection": "movies", "operation": "find", "query": {{"imdb.rating": {{"$gte": 8}}}}, "projection": {{}}, "limit": 10, "explanation": "Find highly rated movies"}}
+4. "Change The Birth of a Nation genre to Action" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "The Birth of a Nation"}}, "update": {{"$set": {{"genres": ["Action"]}}}}, "explanation": "Update movie genre to Action"}}
+5. "Update Inception rating to 9.5" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "Inception"}}, "update": {{"$set": {{"imdb.rating": 9.5}}}}, "explanation": "Update movie rating"}}
+6. "Delete the movie Titanic" → {{"collection": "movies", "operation": "delete_one", "query": {{"title": "Titanic"}}, "explanation": "Delete movie Titanic"}}
+7. "Remove all movies from 1990" → {{"collection": "movies", "operation": "delete_many", "query": {{"year": 1990}}, "explanation": "Delete all movies from 1990"}}
 
 Important: Return ONLY the JSON object, no text before or after."""
 
@@ -164,19 +198,28 @@ Important: Return ONLY the JSON object, no text before or after."""
             }
     
     def translate_to_neo4j(self, natural_query: str, schema_context: str) -> Dict[str, Any]:
-        """Translate natural language to Cypher query"""
+        """Translate natural language to Neo4j Cypher query or CRUD operation"""
         
-        prompt = f"""You are a Neo4j Cypher expert. Translate this natural language query to Cypher.
+        prompt = f"""You are a Neo4j Cypher expert. Translate this natural language query to either a Cypher query or a CRUD operation.
 
 Graph Schema:
 {schema_context}
 
 Natural Language Query: {natural_query}
 
-Return ONLY valid JSON (no markdown):
+Return ONLY valid JSON (no markdown). For queries, use:
 {{
     "cypher": "MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title, m.year LIMIT 10",
     "parameters": {{}},
+    "explanation": "Brief explanation"
+}}
+
+For CRUD operations, use:
+{{
+    "operation": "update_node",
+    "label": "Movie",
+    "match_properties": {{"title": "Movie Title"}},
+    "update_properties": {{"genres": ["Action"]}},
     "explanation": "Brief explanation"
 }}
 
@@ -185,14 +228,41 @@ Cypher Query Rules:
 - Node pattern: (variable:Label {{property: value}})
 - Relationship: (a)-[:REL_TYPE]->(b)
 - WHERE for filtering: WHERE m.year > 2000
-- RETURN variables: RETURN m.title, m.year
+- RETURN entire nodes with related data using OPTIONAL MATCH for directors and cast
 - Always add LIMIT (default 10)
+- CRITICAL: ALWAYS return using this exact pattern: "RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast"
 
-Common patterns:
-- "Find all movies": MATCH (m:Movie) RETURN m LIMIT 10
-- "Movies from year": MATCH (m:Movie) WHERE m.year = 2015 RETURN m.title LIMIT 10
-- "Who directed X": MATCH (p:Person)-[:DIRECTED]->(m:Movie {{title: 'X'}}) RETURN p.name
-- "Actors in movie": MATCH (p:Person)-[:ACTED_IN]->(m:Movie {{title: 'X'}}) RETURN p.name
+Query Pattern Template (FOLLOW THIS EXACTLY):
+MATCH (m:Movie)
+WHERE <optional filter conditions>
+OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m)
+OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m)
+RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast
+LIMIT 10
+
+CRUD Operations:
+- IMPORTANT: Detect keywords "update", "change", "modify", "set" → use "update_node"
+- IMPORTANT: Detect keywords "delete", "remove" → use "delete_node"
+- IMPORTANT: Detect keywords "create", "add", "insert" → use "create_node"
+- update_node: Update properties of a node (requires label, match_properties, update_properties)
+- delete_node: Delete a node and its relationships (requires label, properties)
+- create_node: Create a new node (requires label, properties)
+- create_relationship: Create a relationship between nodes
+- IMPORTANT: genres field must ALWAYS be an array like ["Action"], never just "Action"
+- IMPORTANT: year field must be a number, not a string
+
+Examples:
+1. "Find all movies" → {{"cypher": "MATCH (m:Movie) OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m) OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m) RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast LIMIT 10", "parameters": {{}}, "explanation": "Find all movies with directors and cast"}}
+2. "Update The Birth of a Nation genre to Action" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "The Birth of a Nation"}}, "update_properties": {{"genres": ["Action"]}}, "explanation": "Update movie genre to Action"}}
+3. "Change Inception rating to 9.5" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "Inception"}}, "update_properties": {{"imdb_rating": 9.5}}, "explanation": "Update movie rating"}}
+4. "Add film Influencers from 2025" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Create new movie node"}}
+5. "Delete the movie Titanic" → {{"operation": "delete_node", "label": "Movie", "properties": {{"title": "Titanic"}}, "explanation": "Delete movie node and its relationships"}}
+
+IMPORTANT: 
+- Always use OPTIONAL MATCH to fetch directors and cast
+- Always return "m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast"
+- The Movie node m contains properties: title, year, plot, genres (array), imdb_rating
+- Directors and cast are Person nodes connected via DIRECTED and ACTED_IN relationships
 
 Return ONLY the JSON, no additional text."""
 
@@ -218,36 +288,83 @@ Return ONLY the JSON, no additional text."""
             }
     
     def translate_to_redis(self, natural_query: str, schema_context: str) -> Dict[str, Any]:
-        """Translate natural language to Redis commands"""
+        """Translate natural language to Redis commands or CRUD operations"""
         
-        prompt = f"""You are a Redis expert. Translate this natural language query to Redis commands.
+        prompt = """You are a Redis expert. Translate this natural language query to Redis commands or CRUD operations.
 
 Key Patterns Available:
-{schema_context}
+""" + schema_context + """
 
-Natural Language Query: {natural_query}
+Natural Language Query: """ + natural_query + """
 
-Return ONLY valid JSON:
-{{
+Return ONLY valid JSON. For queries, use:
+{
     "commands": [
-        {{"command": "ZREVRANGE", "args": ["movies:by_rating", "0", "9", "WITHSCORES"]}}
+        {"command": "ZREVRANGE", "args": ["movies:by_rating", "0", "9", "WITHSCORES"]}
     ],
     "explanation": "Brief explanation"
-}}
+}
+
+For CRUD operations, use:
+{
+    "operation": "delete",
+    "keys": ["movie:123", "movie:123:genres"],
+    "explanation": "Delete movie and related data"
+}
+
+Or:
+{
+    "operation": "update_hash",
+    "key": "movie:123",
+    "field": "title",
+    "value": "New Title",
+    "explanation": "Update movie title"
+}
 
 Common Redis Commands:
 - GET key - get string value
 - HGETALL key - get all hash fields  
 - ZREVRANGE key 0 9 WITHSCORES - top 10 from sorted set (high to low)
-- ZRANGE key 0 9 WITHSCORES - range from sorted set (low to high)
+- ZRANGEBYSCORE key min max - range by score values (for year/rating ranges)
 - SMEMBERS key - all set members
 - LRANGE key 0 -1 - all list elements
 
-Use EXACT key names from the schema above.
+Special Query Operations:
+- For genre queries: {{"operation": "filter_by_genre", "genre": "Action", "explanation": "Find movies in Action genre"}}
+- For cast queries: {{"operation": "filter_by_cast", "actor": "Tom Hanks", "explanation": "Find movies with Tom Hanks"}}
+- For director queries: {{"operation": "filter_by_director", "director": "Christopher Nolan", "explanation": "Find movies by Christopher Nolan"}}
+
+CRUD Operations:
+- IMPORTANT: Detect "show", "find", "get", "display" + movie title → use operation: "find"
+- IMPORTANT: Detect "add", "insert", "create" → use operation: "create"
+- IMPORTANT: Detect "delete", "remove" → use operation: "delete" OR "find_and_delete"
+- IMPORTANT: Detect "update", "change", "modify" → use operation: "update_hash" OR "find_and_update"
+- find: Find a movie by title (requires title)
+- create: Create a new movie (requires title, year, and optionally genres, plot, rating)
+- delete: Delete one or more keys (requires keys array)
+- update_hash: Update hash field (requires key, field, value)
+- find_and_delete: Find movie by title and delete (requires title)
+- find_and_update: Find movie by title and update (requires title, field, value)
+
+CRITICAL: When user mentions movie by TITLE (not ID number), ALWAYS use find_and_delete or find_and_update.
+NEVER use delete or update_hash for title-based operations.
+For ADD/INSERT/CREATE operations, always use operation: "create".
+For SHOW/FIND/GET movie by title, always use operation: "find".
 
 Examples:
-- "Top rated movies": {{"command": "ZREVRANGE", "args": ["movies:by_rating", "0", "9", "WITHSCORES"]}}
-- "Movies from 2015": {{"command": "ZRANGE", "args": ["movies:by_year", "2015", "2015"]}}
+1. "Top rated movies" → {{"commands": [{{"command": "ZREVRANGE", "args": ["movies:by_rating", "0", "9", "WITHSCORES"]}}], "explanation": "Get top 10 highest rated movies"}}
+2. "Movies from 2015" → {{"commands": [{{"command": "ZRANGEBYSCORE", "args": ["movies:by_year", "2015", "2015"]}}], "explanation": "Find movies from 2015"}}
+3. "Action movies" → {{"operation": "filter_by_genre", "genre": "Action", "explanation": "Find Action movies"}}
+4. "Movies with Tom Hanks" → {{"operation": "filter_by_cast", "actor": "Tom Hanks", "explanation": "Find movies with Tom Hanks"}}
+5. "Movies by Christopher Nolan" → {{"operation": "filter_by_director", "director": "Christopher Nolan", "explanation": "Find movies by Christopher Nolan"}}
+6. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
+7. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
+8. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+9. "Insert movie Test with year 2020 and genre Action" → {{"operation": "create", "title": "Test", "year": 2020, "genres": "Action", "explanation": "Create new movie"}}
+10. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+11. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+12. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genres", "value": "Action", "explanation": "Update movie genre"}}
+13. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 
@@ -273,19 +390,36 @@ Return ONLY the JSON."""
             }
     
     def translate_to_sparql(self, natural_query: str, schema_context: str) -> Dict[str, Any]:
-        """Translate natural language to SPARQL query"""
+        """Translate natural language to SPARQL query or CRUD operation"""
         
-        prompt = f"""You are a SPARQL expert. Translate this natural language query to SPARQL.
+        prompt = f"""You are a SPARQL expert. Translate this natural language query to SPARQL or CRUD operation.
 
 RDF Schema:
 {schema_context}
 
 Natural Language Query: {natural_query}
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. For queries, use:
 {{
     "sparql": "PREFIX ex: <http://example.org/>\\nSELECT ?title ?year WHERE {{ ?movie a ex:Movie ; ex:title ?title ; ex:year ?year }} LIMIT 10",
     "explanation": "Brief explanation"
+}}
+
+For CRUD operations, use:
+{{
+    "operation": "delete",
+    "subject": "http://example.org/movie/The_Birth_of_a_Nation",
+    "explanation": "Delete all triples for this movie"
+}}
+
+Or:
+{{
+    "operation": "update",
+    "subject": "http://example.org/movie/Inception",
+    "predicate": "http://example.org/imdbRating",
+    "old_value": "8.8",
+    "new_value": "9.5",
+    "explanation": "Update movie rating"
 }}
 
 SPARQL Query Rules:
@@ -293,12 +427,62 @@ SPARQL Query Rules:
 - Triple pattern: ?subject predicate ?object
 - Multiple patterns in {{ }}
 - FILTER for conditions: FILTER(?year > "2000")
-- Always add LIMIT (default 10)
+- For year filters: ex:year "1915" (use string literals, NOT ^^xsd:integer)
+- Always add LIMIT (default 100 to allow for multiple directors/cast per movie)
+- Return ALL relevant fields using OPTIONAL patterns
 
-Common patterns:
-- All movies: ?movie a ex:Movie ; ex:title ?title
-- Filter by genre: ?movie ex:hasGenre ?g . ?g ex:name "Action"
-- Filter by director: ?movie ex:directedBy ?d . ?d ex:name "Name"
+CRUD Operations:
+- IMPORTANT: Detect "show", "find", "get", "display" + movie title → use operation: "find"
+- IMPORTANT: Detect "add", "insert", "create" → use operation: "create"
+- IMPORTANT: Detect "delete", "remove" → use operation: "delete" OR "find_and_delete"
+- IMPORTANT: Detect "update", "change", "modify" → use operation: "update" OR "find_and_update"
+- find: Find a movie by title (requires title)
+- create: Create a new movie (requires title, year, and optionally genres, plot, rating)
+- delete: Delete all triples for a subject (requires subject URI)
+- update: Update a triple value (requires subject, predicate, old_value, new_value)
+- find_and_delete: Find movie by title and delete (requires title)
+- find_and_update: Find movie by title and update field (requires title, field, value)
+
+NOTE: For CRUD by movie title (not full URI), use find_and_delete or find_and_update operations.
+The system will first query to find the movie URI, then perform the operation.
+Movie URIs follow pattern: http://example.org/movie/Title_With_Underscores
+
+Query Pattern Template (IMPORTANT - Follow this exactly):
+PREFIX ex: <http://example.org/>
+SELECT ?title ?year ?plot ?rating ?genreName ?directorName ?actorName
+WHERE {{
+  ?movie a ex:Movie ;
+         ex:title ?title ;
+         ex:year ?year .
+  OPTIONAL {{ ?movie ex:plot ?plot }}
+  OPTIONAL {{ ?movie ex:imdbRating ?rating }}
+  OPTIONAL {{ ?movie ex:hasGenre ?g . ?g ex:name ?genreName }}
+  OPTIONAL {{ ?movie ex:directedBy ?d . ?d ex:name ?directorName }}
+  OPTIONAL {{ ?movie ex:hasActor ?a . ?a ex:name ?actorName }}
+}}
+LIMIT 100
+
+CRITICAL: When user mentions movie by TITLE (not full URI), ALWAYS use find_and_delete or find_and_update.
+NEVER use delete or update for title-based operations.
+For ADD/INSERT/CREATE operations, always use operation: "create".
+For SHOW/FIND/GET movie by title, always use operation: "find".
+
+Examples:
+1. "Find all movies" → {{"sparql": "PREFIX ex: <http://example.org/>\\nSELECT ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{ ?movie a ex:Movie ; ex:title ?title ; ex:year ?year . OPTIONAL {{ ?movie ex:plot ?plot }} OPTIONAL {{ ?movie ex:imdbRating ?rating }} OPTIONAL {{ ?movie ex:hasGenre ?g . ?g ex:name ?genreName }} OPTIONAL {{ ?movie ex:directedBy ?d . ?d ex:name ?directorName }} OPTIONAL {{ ?movie ex:hasActor ?a . ?a ex:name ?actorName }} }} LIMIT 100", "explanation": "Find all movies"}}
+2. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
+3. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
+4. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+5. "Insert movie Test with year 2020" → {{"operation": "create", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+6. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+7. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+8. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+9. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+
+Important: 
+- Use string literals for years like "1915", never use ^^xsd:integer
+- Always SELECT ?title ?year ?plot ?rating ?genreName ?directorName ?actorName (all 7 fields)
+- Always include OPTIONAL patterns for plot, rating, genres, directors, and actors
+- Use LIMIT 100 to get all director/cast relationships (results will be aggregated by title)
 
 Return ONLY the JSON."""
 
@@ -324,34 +508,87 @@ Return ONLY the JSON."""
             }
     
     def translate_to_hbase(self, natural_query: str, schema_context: str) -> Dict[str, Any]:
-        """Translate natural language to HBase operations"""
+        """Translate natural language to HBase operations or CRUD"""
         
-        prompt = f"""You are an HBase expert. Translate this natural language query to HBase scan/get operations.
+        prompt = f"""You are an HBase expert. Translate this natural language query to HBase scan/get operations or CRUD.
 
 HBase Schema:
 {schema_context}
 
 Natural Language Query: {natural_query}
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. For queries, use:
 {{
     "operation": "scan",
     "table": "movies",
     "row_key": null,
-    "columns": ["info:title", "info:year"],
+    "columns": [],
     "limit": 10,
     "explanation": "Brief explanation"
+}}
+
+IMPORTANT: Always use "columns": [] to fetch ALL columns. Never specify specific columns like ["ratings:imdb_rating"].
+Even when filtering by rating or year, you must fetch all movie data (title, year, genres, directors, cast, plot, rating).
+The filtering is done in the query, but the result must include all movie fields.
+
+For CRUD operations, use:
+{{
+    "operation": "delete",
+    "table": "movies",
+    "row_key": "movie_00001",
+    "explanation": "Delete movie row"
+}}
+
+Or:
+{{
+    "operation": "put",
+    "table": "movies",
+    "row_key": "movie_00001",
+    "data": {{"info:title": "New Title"}},
+    "explanation": "Update movie data"
 }}
 
 HBase Operations:
 - scan: Get multiple rows
 - get: Get single row by key
+- put: Insert or update row data
+- delete: Delete a row
 
 Column families in movies table:
 - info: title, year, plot, runtime, rated
 - ratings: imdb_rating, imdb_votes
 - people: directors, cast
 - metadata: genres, languages
+
+CRUD Operations:
+- IMPORTANT: Detect "show", "find", "get", "display" + movie title → use operation: "find"
+- IMPORTANT: Detect "add", "insert", "create" → use operation: "create"
+- IMPORTANT: Detect "delete", "remove" → use operation: "delete" OR "find_and_delete"
+- IMPORTANT: Detect "update", "change", "modify" → use operation: "put" OR "find_and_update"
+- find: Find a movie by title (requires title)
+- create: Create a new movie (requires title, year, and optionally genres, plot, rating)
+- delete: Delete a row (requires table, row_key)
+- put: Insert/update data (requires table, row_key, data with column:field format)
+- find_and_delete: Find movie by title and delete (requires title)
+- find_and_update: Find movie by title and update (requires title, updates dict OR field/value)
+
+CRITICAL: When user mentions movie by TITLE (not row_key like movie_00001), ALWAYS use find_and_delete or find_and_update.
+NEVER use delete or put for title-based operations.
+For ADD/INSERT/CREATE operations, always use operation: "create".
+For SHOW/FIND/GET movie by title, always use operation: "find".
+You can also use "field" and "value" instead of "updates" for find_and_update.
+
+Examples:
+1. "Find all movies" → {{"operation": "scan", "table": "movies", "columns": [], "limit": 10, "explanation": "Scan all movies"}}
+2. "Get movie movie_00001" → {{"operation": "get", "table": "movies", "row_key": "movie_00001", "columns": [], "explanation": "Get specific movie"}}
+3. "Show me the details of Influencers" → {{"operation": "find", "table": "movies", "title": "Influencers", "explanation": "Find movie by title"}}
+4. "Get movie Inception" → {{"operation": "find", "table": "movies", "title": "Inception", "explanation": "Find movie by title"}}
+5. "Add film Influencers from 2025" → {{"operation": "create", "table": "movies", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+6. "Insert movie Test with year 2020" → {{"operation": "create", "table": "movies", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+7. "Delete influencers" → {{"operation": "find_and_delete", "table": "movies", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+8. "Remove the movie Titanic" → {{"operation": "find_and_delete", "table": "movies", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+9. "Change influencers genre to action" → {{"operation": "find_and_update", "table": "movies", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+10. "Update Inception year to 2020" → {{"operation": "find_and_update", "table": "movies", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 

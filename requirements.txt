@@ -57,3 +57,9 @@ SPARQLWrapper==2.0.0
 #GEMINI
 google-generativeai==0.3.2
 python-dotenv==1.0.0
+
+# CLI Interface
+rich==13.7.0
+
+# Web Interface
+streamlit==1.28.1

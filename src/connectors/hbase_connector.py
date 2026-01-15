@@ -250,7 +250,8 @@ class HBaseConnector:
                 scan_kwargs['row_start'] = row_start.encode() if isinstance(row_start, str) else row_start
             if row_stop:
                 scan_kwargs['row_stop'] = row_stop.encode() if isinstance(row_stop, str) else row_stop
-            if columns:
+            # Only add columns if it's a non-empty list (empty list means fetch all columns)
+            if columns and len(columns) > 0:
                 scan_kwargs['columns'] = [col.encode() if isinstance(col, str) else col 
                                          for col in columns]
             if limit:

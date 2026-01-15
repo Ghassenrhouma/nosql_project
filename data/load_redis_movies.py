@@ -93,11 +93,11 @@ def main():
             
             # 3. Add to sorted set by rating (if available)
             if imdb.get('rating'):
-                redis_conn.zadd('movies:by_rating', {movie_id: float(imdb['rating'])})
+                redis_conn.zadd('movies:by_rating', {movie_key: float(imdb['rating'])})
             
             # 4. Add to sorted set by year (if available)
             if year:
-                redis_conn.zadd('movies:by_year', {movie_id: float(year)})
+                redis_conn.zadd('movies:by_year', {movie_key: float(year)})
             
             # 5. Store cast as list (if available)
             cast = movie.get('cast', [])

@@ -122,10 +122,70 @@ class Neo4jConnector:
         """
         parameters = parameters or {}
         
+        def convert_neo4j_object(obj):
+            """Recursively convert Neo4j objects to dictionaries"""
+            if hasattr(obj, 'properties'):
+                # Node or Relationship
+                try:
+                    result = dict(obj.properties)
+                    if hasattr(obj, 'labels'):
+                        result['_labels'] = list(obj.labels)
+                    if hasattr(obj, 'type'):
+                        result['_type'] = obj.type
+                    if hasattr(obj, 'element_id'):
+                        result['_id'] = obj.element_id
+                    elif hasattr(obj, 'id'):
+                        result['_id'] = obj.id
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"Failed to convert Neo4j object: {e}")
+                    return str(obj)
+            elif hasattr(obj, 'keys') and callable(getattr(obj, 'keys', None)):
+                # Record or dict-like object
+                try:
+                    result = {}
+                    for key in obj.keys():
+                        value = obj[key]
+                        result[key] = convert_neo4j_object(value)
+                    return result
+                except Exception:
+                    # Not a real dict-like, treat as single object
+                    return str(obj)
+            elif isinstance(obj, (list, tuple)):
+                return [convert_neo4j_object(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: convert_neo4j_object(value) for key, value in obj.items()}
+            else:
+                return obj
+        
         try:
             with self.driver.session(database=self.database) as session:
                 result = session.run(query, parameters)
-                records = [dict(record) for record in result]
+                records = []
+                for record in result:
+                    # Convert record values and create a simple dict
+                    record_dict = {}
+                    try:
+                        # Get all values from the record
+                        for key in record.keys():
+                            value = record[key]
+                            record_dict[key] = convert_neo4j_object(value)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to process record keys: {e}")
+                        # Fallback: try to iterate through record as sequence
+                        try:
+                            for i, value in enumerate(record):
+                                record_dict[f'col_{i}'] = convert_neo4j_object(value)
+                        except Exception as e2:
+                            self.logger.warning(f"Failed to process record as sequence: {e2}")
+                            record_dict['error'] = f'Could not process record: {str(record)}'
+                    
+                    # If the record has only one key and it's a dict, flatten it
+                    if len(record_dict) == 1 and isinstance(list(record_dict.values())[0], dict):
+                        records.append(list(record_dict.values())[0])
+                    else:
+                        records.append(record_dict)
+                        
                 self.logger.info(f"✓ Query executed, returned {len(records)} records")
                 return records
         except Neo4jError as e:
