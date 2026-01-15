@@ -101,14 +101,26 @@ class CrossDatabaseComparator:
                                 translated.get('sparql') or translated.get('commands') or
                                 translated.get('operation'),
                         'explanation': translated.get('explanation', ''),
-                        'error': translated.get('error')
+                        'error': translated.get('error'),
+                        # Store full translated dict for operation details
+                        'operation': translated.get('operation'),
+                        'filters': translated.get('filters'),
+                        'genre': translated.get('genre'),
+                        'year': translated.get('year'),
+                        'director': translated.get('director'),
+                        'actor': translated.get('actor'),
+                        'document': translated.get('document'),
+                        'update': translated.get('update')
                     },
                     'execution': {
                         'success': execution_result.get('success', False) if execution_result else False,
                         'time_seconds': execution_time,
                         'result_count': execution_result.get('count', 0) if execution_result else 0,
                         'sample_results': self._extract_sample_results(execution_result),
-                        'error': execution_result.get('error') if execution_result else None
+                        'error': execution_result.get('error') if execution_result else None,
+                        # Include generated queries from execution (for filter operations)
+                        'cypher': execution_result.get('cypher') if execution_result else None,
+                        'sparql': execution_result.get('sparql') if execution_result else None
                     },
                     'total_time': translation_time + execution_time
                 }

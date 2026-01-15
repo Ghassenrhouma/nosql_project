@@ -1112,8 +1112,45 @@ def display_comparison_results(query: str, results: dict):
 
             # Show translated query
             if trans['success']:
-                query_text = trans.get('query') or trans.get('cypher') or trans.get('sparql') or str(trans.get('commands', ''))
-                st.code(query_text, language=get_query_language(db_key))
+                # Get the operation type
+                operation = trans.get('operation', '')
+                
+                # For Neo4j filter operations, get the generated Cypher from execution result
+                if db_key == 'neo4j' and operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple']:
+                    query_text = exec_data.get('cypher', 'No query generated')
+                # For RDF filter operations, get the generated SPARQL from execution result
+                elif db_key == 'rdf' and operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple']:
+                    query_text = exec_data.get('sparql', 'No query generated')
+                # For MongoDB CRUD operations, show operation details
+                elif db_key == 'mongodb' and operation in ['insert_one', 'insert_many', 'update_one', 'update_many', 'delete_one', 'delete_many']:
+                    query_text = f"Operation: {operation}\n"
+                    if 'document' in trans:
+                        query_text += f"Document: {trans['document']}\n"
+                    if 'documents' in trans:
+                        query_text += f"Documents: {trans['documents']}\n"
+                    if 'query' in trans:
+                        query_text += f"Query: {trans['query']}\n"
+                    if 'update' in trans:
+                        query_text += f"Update: {trans['update']}\n"
+                # For Redis, HBase filter operations or CRUD operations
+                elif db_key in ['redis', 'hbase'] and operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple', 'find', 'create', 'find_and_delete', 'find_and_update']:
+                    query_text = f"Operation: {operation}\n"
+                    if 'filters' in trans:
+                        query_text += f"Filters: {trans['filters']}\n"
+                    if 'genre' in trans:
+                        query_text += f"Genre: {trans['genre']}\n"
+                    if 'year' in trans:
+                        query_text += f"Year: {trans['year']}\n"
+                    if 'director' in trans:
+                        query_text += f"Director: {trans['director']}\n"
+                    if 'actor' in trans:
+                        query_text += f"Actor: {trans['actor']}\n"
+                else:
+                    # Default: get query from translation
+                    query_text = trans.get('query') or trans.get('cypher') or trans.get('sparql') or str(trans.get('commands', ''))
+                
+                if query_text:
+                    st.code(query_text, language=get_query_language(db_key))
 
                 if trans.get('explanation'):
                     st.info(f"💡 {trans['explanation']}")

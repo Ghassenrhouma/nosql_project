@@ -142,6 +142,17 @@ For deletes, use:
     "explanation": "Brief explanation"
 }}
 
+For inserts, use:
+{{
+    "collection": "movies",
+    "operation": "insert_one",
+    "document": {{"title": "Movie Title", "year": 2025, "genres": ["Drama"], "plot": "Movie description"}},
+    "explanation": "Brief explanation"
+}}
+
+Note: MongoDB schema uses nested structure for ratings: {{"imdb": {{"rating": 8.5}}}}
+For inserts with rating, use: {{"title": "...", "year": ..., "genres": [...], "imdb": {{"rating": ...}}}}
+
 MongoDB Query Rules:
 - Collection is almost always "movies"
 - Use operators: $eq, $gt, $gte, $lt, $lte, $in, $regex
@@ -173,6 +184,8 @@ Examples:
 5. "Update Inception rating to 9.5" → {{"collection": "movies", "operation": "update_one", "query": {{"title": "Inception"}}, "update": {{"$set": {{"imdb.rating": 9.5}}}}, "explanation": "Update movie rating"}}
 6. "Delete the movie Titanic" → {{"collection": "movies", "operation": "delete_one", "query": {{"title": "Titanic"}}, "explanation": "Delete movie Titanic"}}
 7. "Remove all movies from 1990" → {{"collection": "movies", "operation": "delete_many", "query": {{"year": 1990}}, "explanation": "Delete all movies from 1990"}}
+8. "Add film Influencers from 2025" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Insert new movie"}}
+9. "Create movie Test with year 2020" → {{"collection": "movies", "operation": "insert_one", "document": {{"title": "Test", "year": 2020, "genres": ["Unknown"]}}, "explanation": "Insert new movie"}}
 
 Important: Return ONLY the JSON object, no text before or after."""
 

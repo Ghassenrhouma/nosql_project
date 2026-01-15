@@ -81,14 +81,24 @@ class QueryExecutor:
                 if not document:
                     raise ValueError("Insert operation requires 'document' field")
                 inserted_id = conn.insert_one(collection, document)
-                results = [{'inserted_id': str(inserted_id)}]
+                # Return the document with the inserted ID
+                result_doc = document.copy()
+                result_doc['_id'] = str(inserted_id)
+                result_doc['inserted_id'] = str(inserted_id)
+                results = [result_doc]
                 self.logger.info(f"MongoDB insert_one: {inserted_id}")
             elif operation == 'insert_many':
                 documents = query_dict.get('documents', [])
                 if not documents:
                     raise ValueError("Insert many operation requires 'documents' field")
                 inserted_ids = conn.insert_many(collection, documents)
-                results = [{'inserted_ids': [str(id) for id in inserted_ids]}]
+                # Return the documents with their inserted IDs
+                results = []
+                for i, doc in enumerate(documents):
+                    result_doc = doc.copy()
+                    result_doc['_id'] = str(inserted_ids[i])
+                    result_doc['inserted_id'] = str(inserted_ids[i])
+                    results.append(result_doc)
                 self.logger.info(f"MongoDB insert_many: {len(inserted_ids)} inserted")
             else:
                 results = []
@@ -159,7 +169,12 @@ class QueryExecutor:
                 if not label or not properties:
                     raise ValueError("Create node requires: label, properties")
                 node_id = conn.create_node(label, properties)
-                results = [{'node_id': node_id}]
+                # Return the properties with the node ID
+                result_node = properties.copy()
+                result_node['_id'] = node_id
+                result_node['node_id'] = node_id
+                result_node['_labels'] = [label]
+                results = [result_node]
                 self.logger.info(f"Neo4j create_node: node_id={node_id}")
                 return {
                     'success': True,
@@ -468,9 +483,15 @@ class QueryExecutor:
                     conn.client.zadd('movies:by_year', {movie_key: int(year)})
                     
                     self.logger.info(f"Created movie {movie_key}: {title}")
+                    
+                    # Return the complete movie data for display
+                    result_data = movie_data.copy()
+                    result_data['movie_id'] = movie_id
+                    result_data['_key'] = movie_key
+                    
                     return {
                         'success': True,
-                        'results': [{'created': True, 'movie_id': movie_id, 'title': title, 'year': year}],
+                        'results': [result_data],
                         'count': 1
                     }
                 
@@ -1021,9 +1042,21 @@ class QueryExecutor:
                     
                     success = conn.execute_update(insert_query)
                     self.logger.info(f"Created movie {movie_uri}: {title}")
+                    
+                    # Return the complete movie data for display
+                    result_data = {
+                        'title': title,
+                        'year': year,
+                        'movie': movie_uri,
+                        'subject': movie_uri
+                    }
+                    if genres:
+                        result_data['genreName'] = genres
+                        result_data['genres'] = [genres]
+                    
                     return {
                         'success': True,
-                        'results': [{'created': success, 'subject': movie_uri, 'title': title, 'year': year}],
+                        'results': [result_data],
                         'count': 1
                     }
                 
@@ -1243,7 +1276,8 @@ class QueryExecutor:
                     return {
                         'success': True,
                         'results': results,
-                        'count': len(results)
+                        'count': len(results),
+                        'sparql': sparql_query
                     }
                 
                 elif operation == 'filter_by_year':
@@ -1284,7 +1318,8 @@ class QueryExecutor:
                     return {
                         'success': True,
                         'results': results,
-                        'count': len(results)
+                        'count': len(results),
+                        'sparql': sparql_query
                     }
                 
                 elif operation == 'filter_by_director':
@@ -1323,7 +1358,8 @@ class QueryExecutor:
                     return {
                         'success': True,
                         'results': results,
-                        'count': len(results)
+                        'count': len(results),
+                        'sparql': sparql_query
                     }
                 
                 elif operation == 'filter_by_cast':
@@ -1362,7 +1398,8 @@ class QueryExecutor:
                     return {
                         'success': True,
                         'results': results,
-                        'count': len(results)
+                        'count': len(results),
+                        'sparql': sparql_query
                     }
                 
                 elif operation == 'filter_by_multiple':
@@ -1465,7 +1502,8 @@ class QueryExecutor:
                     return {
                         'success': True,
                         'results': results,
-                        'count': len(results)
+                        'count': len(results),
+                        'sparql': sparql_query
                     }
                 
                 else:
@@ -1571,9 +1609,16 @@ class QueryExecutor:
                 try:
                     success = conn.put(table, row_key, data)
                     self.logger.info(f"Created movie in HBase table '{table}': {row_key} - {title}")
+                    
+                    # Return the complete movie data in HBase format for display
+                    result_data = {
+                        'row_key': row_key,
+                        'data': data
+                    }
+                    
                     return {
                         'success': True,
-                        'results': [{'created': True, 'row_key': row_key, 'title': title, 'year': year}],
+                        'results': [result_data],
                         'count': 1
                     }
                 except Exception as e:
