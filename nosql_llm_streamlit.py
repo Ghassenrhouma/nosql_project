@@ -740,6 +740,9 @@ From Properties: {translated.get('from_properties', {})}
 To Label: {translated.get('to_label', '')}
 To Properties: {translated.get('to_properties', {})}
 Relationship Type: {translated.get('relationship_type', '')}"""
+            elif operation in ['filter_by_genre', 'filter_by_year', 'filter_by_director', 'filter_by_cast', 'filter_by_multiple']:
+                # Show the generated Cypher query from the execution result
+                query_text = result.get('cypher', 'No query generated')
             else:
                 query_text = translated.get('cypher', '')
         elif 'operation' in translated and db_key in ['redis', 'hbase', 'rdf']:

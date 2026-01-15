@@ -180,6 +180,183 @@ class QueryExecutor:
                     'results': results,
                     'count': len(results)
                 }
+            elif operation == 'filter_by_genre':
+                # Filter movies by genre
+                genre = query_dict.get('genre', '')
+                if not genre:
+                    return {'success': False, 'error': 'filter_by_genre requires genre'}
+                
+                cypher = f"""
+                MATCH (m:Movie)
+                WHERE $genre IN m.genres
+                OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m)
+                OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m)
+                RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast
+                LIMIT 10
+                """
+                results = conn.execute_query(cypher, {'genre': genre})
+                return {
+                    'success': True,
+                    'results': results,
+                    'count': len(results),
+                    'cypher': cypher,
+                    'parameters': {'genre': genre}
+                }
+            elif operation == 'filter_by_year':
+                # Filter movies by year
+                year = query_dict.get('year', '')
+                if not year:
+                    return {'success': False, 'error': 'filter_by_year requires year'}
+                
+                cypher = """
+                MATCH (m:Movie)
+                WHERE m.year = $year
+                OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m)
+                OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m)
+                RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast
+                LIMIT 10
+                """
+                results = conn.execute_query(cypher, {'year': int(year)})
+                return {
+                    'success': True,
+                    'results': results,
+                    'count': len(results),
+                    'cypher': cypher,
+                    'parameters': {'year': int(year)}
+                }
+            elif operation == 'filter_by_director':
+                # Filter movies by director
+                director = query_dict.get('director', '')
+                if not director:
+                    return {'success': False, 'error': 'filter_by_director requires director'}
+                
+                cypher = """
+                MATCH (d:Person)-[:DIRECTED]->(m:Movie)
+                WHERE toLower(d.name) CONTAINS toLower($director)
+                OPTIONAL MATCH (d2:Person)-[:DIRECTED]->(m)
+                OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m)
+                RETURN m, collect(DISTINCT d2.name) as directors, collect(DISTINCT a.name) as cast
+                LIMIT 10
+                """
+                results = conn.execute_query(cypher, {'director': director})
+                return {
+                    'success': True,
+                    'results': results,
+                    'count': len(results),
+                    'cypher': cypher,
+                    'parameters': {'director': director}
+                }
+            elif operation == 'filter_by_cast':
+                # Filter movies by actor/cast
+                actor = query_dict.get('actor', '')
+                if not actor:
+                    return {'success': False, 'error': 'filter_by_cast requires actor'}
+                
+                cypher = """
+                MATCH (a:Person)-[:ACTED_IN]->(m:Movie)
+                WHERE toLower(a.name) CONTAINS toLower($actor)
+                OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m)
+                OPTIONAL MATCH (a2:Person)-[:ACTED_IN]->(m)
+                RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a2.name) as cast
+                LIMIT 10
+                """
+                results = conn.execute_query(cypher, {'actor': actor})
+                return {
+                    'success': True,
+                    'results': results,
+                    'count': len(results),
+                    'cypher': cypher,
+                    'parameters': {'actor': actor}
+                }
+            elif operation == 'filter_by_multiple':
+                # Filter by multiple criteria (genre, year, director, actor)
+                filters = query_dict.get('filters', {})
+                
+                if not filters:
+                    return {'success': False, 'error': 'filter_by_multiple requires filters dict'}
+                
+                # Build Cypher query dynamically based on filters
+                where_clauses = []
+                parameters = {}
+                
+                # Build MATCH clause with director/actor relationships if needed
+                if 'director' in filters and 'actor' in filters:
+                    # Both director and actor
+                    cypher_parts = [
+                        "MATCH (m:Movie)",
+                        "MATCH (filterDirector:Person)-[:DIRECTED]->(m)",
+                        "MATCH (filterActor:Person)-[:ACTED_IN]->(m)"
+                    ]
+                    where_clauses.append("toLower(filterDirector.name) CONTAINS toLower($director)")
+                    where_clauses.append("toLower(filterActor.name) CONTAINS toLower($actor)")
+                    parameters['director'] = filters['director']
+                    parameters['actor'] = filters['actor']
+                elif 'director' in filters:
+                    # Only director
+                    cypher_parts = [
+                        "MATCH (filterDirector:Person)-[:DIRECTED]->(m:Movie)"
+                    ]
+                    where_clauses.append("toLower(filterDirector.name) CONTAINS toLower($director)")
+                    parameters['director'] = filters['director']
+                elif 'actor' in filters:
+                    # Only actor
+                    cypher_parts = [
+                        "MATCH (filterActor:Person)-[:ACTED_IN]->(m:Movie)"
+                    ]
+                    where_clauses.append("toLower(filterActor.name) CONTAINS toLower($actor)")
+                    parameters['actor'] = filters['actor']
+                else:
+                    # No director or actor filter
+                    cypher_parts = ["MATCH (m:Movie)"]
+                
+                # Add year filter to WHERE - handle both string and int
+                if 'year' in filters:
+                    year_value = filters['year']
+                    # Try both as string and as int to be flexible
+                    where_clauses.append("(m.year = $year OR m.year = $yearStr)")
+                    parameters['year'] = int(year_value) if isinstance(year_value, str) else year_value
+                    parameters['yearStr'] = str(year_value)
+                
+                # Add genre filter to WHERE (case-insensitive, check if genres exists and is array)
+                if 'genre' in filters:
+                    where_clauses.append("(m.genres IS NOT NULL AND ANY(g IN m.genres WHERE toLower(g) CONTAINS toLower($genre)))")
+                    parameters['genre'] = filters['genre']
+                
+                # Add WHERE clause if we have any filters
+                if where_clauses:
+                    cypher_parts.append("WITH m")
+                    cypher_parts.append("WHERE " + " AND ".join(where_clauses))
+                
+                # Add OPTIONAL MATCH for collecting all directors and cast
+                cypher_parts.extend([
+                    "OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m)",
+                    "OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m)",
+                    "RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast",
+                    "LIMIT 10"
+                ])
+                
+                cypher = "\n".join(cypher_parts)
+                self.logger.info(f"Executing Neo4j filter_by_multiple query:\n{cypher}")
+                self.logger.info(f"Parameters: {parameters}")
+                
+                results = conn.execute_query(cypher, parameters)
+                
+                if not results:
+                    self.logger.warning(f"No results found for filters: {filters}")
+                    # Try a simpler query to see if any movies exist with these criteria individually
+                    debug_cypher = "MATCH (m:Movie) WHERE m.year IN [$year, $yearStr] RETURN count(m) as count"
+                    debug_result = conn.execute_query(debug_cypher, {'year': parameters.get('year'), 'yearStr': parameters.get('yearStr')})
+                    self.logger.info(f"Debug: Movies in year {filters.get('year')}: {debug_result}")
+                else:
+                    self.logger.info(f"Found {len(results)} movies matching filters")
+                
+                return {
+                    'success': True,
+                    'results': results,
+                    'count': len(results),
+                    'cypher': cypher,
+                    'parameters': parameters
+                }
             else:
                 # Default to Cypher query execution
                 cypher = query_dict.get('cypher')
@@ -421,6 +598,14 @@ class QueryExecutor:
                         movie_data = conn.hgetall(movie_key)
                         if movie_data:
                             movie_data['_key'] = movie_key
+                            # Fetch related data from separate keys
+                            genres_set = conn.smembers(f"{movie_key}:genres")
+                            cast_list = conn.lrange(f"{movie_key}:cast", 0, -1)
+                            directors_list = conn.lrange(f"{movie_key}:directors", 0, -1)
+                            
+                            movie_data['genres'] = list(genres_set) if genres_set else []
+                            movie_data['cast'] = cast_list if cast_list else []
+                            movie_data['directors'] = directors_list if directors_list else []
                             results_list.append(movie_data)
                     
                     self.logger.info(f"Found {len(results_list)} movies in genre '{genre}'")
@@ -459,6 +644,13 @@ class QueryExecutor:
                                 movie_data = conn.hgetall(key_str)
                                 if movie_data:
                                     movie_data['_key'] = key_str
+                                    # Fetch related data from separate keys
+                                    genres_set = conn.smembers(f"{key_str}:genres")
+                                    directors_list = conn.lrange(f"{key_str}:directors", 0, -1)
+                                    
+                                    movie_data['genres'] = list(genres_set) if genres_set else []
+                                    movie_data['cast'] = cast_list if cast_list else []
+                                    movie_data['directors'] = directors_list if directors_list else []
                                     results_list.append(movie_data)
                                     if len(results_list) >= 10:
                                         break
@@ -505,6 +697,13 @@ class QueryExecutor:
                                 movie_data = conn.hgetall(key_str)
                                 if movie_data:
                                     movie_data['_key'] = key_str
+                                    # Fetch related data from separate keys
+                                    genres_set = conn.smembers(f"{key_str}:genres")
+                                    cast_list = conn.lrange(f"{key_str}:cast", 0, -1)
+                                    
+                                    movie_data['genres'] = list(genres_set) if genres_set else []
+                                    movie_data['cast'] = cast_list if cast_list else []
+                                    movie_data['directors'] = director_list if director_list else []
                                     results_list.append(movie_data)
                                     if len(results_list) >= 10:
                                         break
@@ -516,6 +715,82 @@ class QueryExecutor:
                         return {'success': False, 'error': f'No movies found by director "{director}"'}
                     
                     self.logger.info(f"Found {len(results_list)} movies by director '{director}'")
+                    return {
+                        'success': True,
+                        'results': results_list,
+                        'count': len(results_list)
+                    }
+                
+                elif operation == 'filter_by_multiple':
+                    # Filter movies by multiple criteria
+                    filters = query_dict.get('filters', {})
+                    if not filters:
+                        return {'success': False, 'error': 'filter_by_multiple requires filters dict'}
+                    
+                    # Start with all movies or use optimized approach if year filter exists
+                    genre_filter = filters.get('genre', '').lower()
+                    year_filter = str(filters.get('year', '')) if 'year' in filters else None
+                    actor_filter = filters.get('actor', '').lower()
+                    director_filter = filters.get('director', '').lower()
+                    
+                    results_list = []
+                    
+                    # If genre is specified, start with genre set (most efficient)
+                    if genre_filter:
+                        genre_key = f"genre:{filters['genre']}:movies"
+                        movie_ids = conn.smembers(genre_key)
+                        candidate_keys = [f"movie:{mid}" for mid in movie_ids]
+                    else:
+                        # Otherwise scan all movies
+                        cursor = 0
+                        candidate_keys = []
+                        while len(candidate_keys) < 1000:
+                            cursor, keys = conn.client.scan(cursor, match='movie:*', count=1000)
+                            candidate_keys.extend([k.decode('utf-8') if isinstance(k, bytes) else k for k in keys if ':' in (k.decode('utf-8') if isinstance(k, bytes) else k) and (k.decode('utf-8') if isinstance(k, bytes) else k).count(':') == 1])
+                            if cursor == 0:
+                                break
+                    
+                    # Filter through candidates
+                    for movie_key in candidate_keys:
+                        if len(results_list) >= 10:
+                            break
+                        
+                        # Get movie hash data
+                        movie_data = conn.hgetall(movie_key)
+                        if not movie_data:
+                            continue
+                        
+                        # Check year filter
+                        if year_filter and movie_data.get('year', '') != year_filter:
+                            continue
+                        
+                        # Check actor filter
+                        if actor_filter:
+                            cast_list = conn.lrange(f"{movie_key}:cast", 0, -1)
+                            if not any(actor_filter in str(c).lower() for c in cast_list):
+                                continue
+                        
+                        # Check director filter
+                        if director_filter:
+                            director_list = conn.lrange(f"{movie_key}:directors", 0, -1)
+                            if not any(director_filter in str(d).lower() for d in director_list):
+                                continue
+                        
+                        # All filters passed - add full data
+                        movie_data['_key'] = movie_key
+                        genres_set = conn.smembers(f"{movie_key}:genres")
+                        cast_list = conn.lrange(f"{movie_key}:cast", 0, -1)
+                        director_list = conn.lrange(f"{movie_key}:directors", 0, -1)
+                        
+                        movie_data['genres'] = list(genres_set) if genres_set else []
+                        movie_data['cast'] = cast_list if cast_list else []
+                        movie_data['directors'] = director_list if director_list else []
+                        results_list.append(movie_data)
+                    
+                    if not results_list:
+                        return {'success': False, 'error': f'No movies found matching filters: {filters}'}
+                    
+                    self.logger.info(f"Found {len(results_list)} movies matching filters: {filters}")
                     return {
                         'success': True,
                         'results': results_list,
@@ -671,7 +946,7 @@ class QueryExecutor:
                     # Query to find movie by title
                     find_query = f"""
                     PREFIX ex: <http://example.org/>
-                    SELECT ?movie ?title ?year ?plot ?rating ?genreName WHERE {{
+                    SELECT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{
                         ?movie a ex:Movie ;
                                ex:title ?title .
                         FILTER (lcase(str(?title)) = lcase("{title}"))
@@ -683,7 +958,16 @@ class QueryExecutor:
                             ?movie ex:hasGenre ?genre .
                             ?genre ex:name ?genreName
                         }}
+                        OPTIONAL {{
+                            ?movie ex:directedBy ?director .
+                            ?director ex:name ?directorName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:starring ?actor .
+                            ?actor ex:name ?actorName
+                        }}
                     }}
+                    LIMIT 100
                     """
                     results = conn.execute_query(find_query)
                     
@@ -923,6 +1207,267 @@ class QueryExecutor:
                         'count': 1
                     }
                 
+                elif operation == 'filter_by_genre':
+                    # Filter movies by genre
+                    genre = query_dict.get('genre', '')
+                    
+                    if not genre:
+                        return {'success': False, 'error': 'filter_by_genre requires genre'}
+                    
+                    # Query to find all movies with this genre
+                    sparql_query = f"""
+                    PREFIX ex: <http://example.org/>
+                    SELECT DISTINCT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{
+                        ?movie a ex:Movie ;
+                               ex:title ?title ;
+                               ex:hasGenre ?genre .
+                        ?genre ex:name ?genreName .
+                        FILTER (lcase(str(?genreName)) = lcase("{genre}"))
+                        
+                        OPTIONAL {{ ?movie ex:year ?year }}
+                        OPTIONAL {{ ?movie ex:plot ?plot }}
+                        OPTIONAL {{ ?movie ex:imdbRating ?rating }}
+                        OPTIONAL {{
+                            ?movie ex:directedBy ?director .
+                            ?director ex:name ?directorName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:starring ?actor .
+                            ?actor ex:name ?actorName
+                        }}
+                    }}
+                    LIMIT 100
+                    """
+                    
+                    results = conn.execute_query(sparql_query)
+                    return {
+                        'success': True,
+                        'results': results,
+                        'count': len(results)
+                    }
+                
+                elif operation == 'filter_by_year':
+                    # Filter movies by year
+                    year = query_dict.get('year', '')
+                    
+                    if not year:
+                        return {'success': False, 'error': 'filter_by_year requires year'}
+                    
+                    # Query to find all movies from this year
+                    sparql_query = f"""
+                    PREFIX ex: <http://example.org/>
+                    SELECT DISTINCT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{
+                        ?movie a ex:Movie ;
+                               ex:title ?title ;
+                               ex:year ?year .
+                        FILTER (?year = "{year}")
+                        
+                        OPTIONAL {{ ?movie ex:plot ?plot }}
+                        OPTIONAL {{ ?movie ex:imdbRating ?rating }}
+                        OPTIONAL {{
+                            ?movie ex:hasGenre ?genre .
+                            ?genre ex:name ?genreName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:directedBy ?director .
+                            ?director ex:name ?directorName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:starring ?actor .
+                            ?actor ex:name ?actorName
+                        }}
+                    }}
+                    LIMIT 100
+                    """
+                    
+                    results = conn.execute_query(sparql_query)
+                    return {
+                        'success': True,
+                        'results': results,
+                        'count': len(results)
+                    }
+                
+                elif operation == 'filter_by_director':
+                    # Filter movies by director
+                    director = query_dict.get('director', '')
+                    
+                    if not director:
+                        return {'success': False, 'error': 'filter_by_director requires director'}
+                    
+                    # Query to find all movies by this director
+                    sparql_query = f"""
+                    PREFIX ex: <http://example.org/>
+                    SELECT DISTINCT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{
+                        ?movie a ex:Movie ;
+                               ex:title ?title ;
+                               ex:directedBy ?director .
+                        ?director ex:name ?directorName .
+                        FILTER (lcase(str(?directorName)) = lcase("{director}"))
+                        
+                        OPTIONAL {{ ?movie ex:year ?year }}
+                        OPTIONAL {{ ?movie ex:plot ?plot }}
+                        OPTIONAL {{ ?movie ex:imdbRating ?rating }}
+                        OPTIONAL {{
+                            ?movie ex:hasGenre ?genre .
+                            ?genre ex:name ?genreName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:starring ?actor .
+                            ?actor ex:name ?actorName
+                        }}
+                    }}
+                    LIMIT 100
+                    """
+                    
+                    results = conn.execute_query(sparql_query)
+                    return {
+                        'success': True,
+                        'results': results,
+                        'count': len(results)
+                    }
+                
+                elif operation == 'filter_by_cast':
+                    # Filter movies by actor/cast
+                    actor = query_dict.get('actor', '')
+                    
+                    if not actor:
+                        return {'success': False, 'error': 'filter_by_cast requires actor'}
+                    
+                    # Query to find all movies with this actor
+                    sparql_query = f"""
+                    PREFIX ex: <http://example.org/>
+                    SELECT DISTINCT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{
+                        ?movie a ex:Movie ;
+                               ex:title ?title ;
+                               ex:starring ?actor .
+                        ?actor ex:name ?actorName .
+                        FILTER (lcase(str(?actorName)) = lcase("{actor}"))
+                        
+                        OPTIONAL {{ ?movie ex:year ?year }}
+                        OPTIONAL {{ ?movie ex:plot ?plot }}
+                        OPTIONAL {{ ?movie ex:imdbRating ?rating }}
+                        OPTIONAL {{
+                            ?movie ex:hasGenre ?genre .
+                            ?genre ex:name ?genreName
+                        }}
+                        OPTIONAL {{
+                            ?movie ex:directedBy ?director .
+                            ?director ex:name ?directorName
+                        }}
+                    }}
+                    LIMIT 100
+                    """
+                    
+                    results = conn.execute_query(sparql_query)
+                    return {
+                        'success': True,
+                        'results': results,
+                        'count': len(results)
+                    }
+                
+                elif operation == 'filter_by_multiple':
+                    # Filter by multiple criteria (genre, year, director, actor)
+                    filters = query_dict.get('filters', {})
+                    
+                    if not filters:
+                        return {'success': False, 'error': 'filter_by_multiple requires filters dict'}
+                    
+                    # Build SPARQL query with multiple filter conditions
+                    # Base pattern for movie
+                    query_parts = ["""
+                    PREFIX ex: <http://example.org/>
+                    SELECT DISTINCT ?movie ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {
+                        ?movie a ex:Movie ;
+                               ex:title ?title ."""]
+                    
+                    # Add required and optional fields
+                    filter_conditions = []
+                    
+                    # Year filter (required field)
+                    if 'year' in filters:
+                        query_parts.append("""
+                        ?movie ex:year ?year .""")
+                        filter_conditions.append(f'?year = "{filters["year"]}"')
+                    else:
+                        query_parts.append("""
+                        OPTIONAL { ?movie ex:year ?year }""")
+                    
+                    # Plot and rating (always optional)
+                    query_parts.append("""
+                        OPTIONAL { ?movie ex:plot ?plot }
+                        OPTIONAL { ?movie ex:imdbRating ?rating }""")
+                    
+                    # Genre filter
+                    if 'genre' in filters:
+                        query_parts.append("""
+                        ?movie ex:hasGenre ?genre .
+                        ?genre ex:name ?genreName .""")
+                        filter_conditions.append(f'lcase(str(?genreName)) = lcase("{filters["genre"]}")')
+                    else:
+                        query_parts.append("""
+                        OPTIONAL {
+                            ?movie ex:hasGenre ?genre .
+                            ?genre ex:name ?genreName
+                        }""")
+                    
+                    # Director filter
+                    if 'director' in filters:
+                        query_parts.append("""
+                        ?movie ex:directedBy ?director .
+                        ?director ex:name ?directorName .""")
+                        filter_conditions.append(f'lcase(str(?directorName)) = lcase("{filters["director"]}")')
+                    else:
+                        query_parts.append("""
+                        OPTIONAL {
+                            ?movie ex:directedBy ?director .
+                            ?director ex:name ?directorName
+                        }""")
+                    
+                    # Actor filter
+                    if 'actor' in filters:
+                        query_parts.append("""
+                        ?movie ex:starring ?actor .
+                        ?actor ex:name ?actorName .""")
+                        filter_conditions.append(f'lcase(str(?actorName)) = lcase("{filters["actor"]}")')
+                    else:
+                        query_parts.append("""
+                        OPTIONAL {
+                            ?movie ex:starring ?actor .
+                            ?actor ex:name ?actorName
+                        }""")
+                    
+                    # Add FILTER conditions INSIDE WHERE clause
+                    if filter_conditions:
+                        for condition in filter_conditions:
+                            query_parts.append(f"\n        FILTER ({condition})")
+                    
+                    # Close the WHERE clause
+                    query_parts.append("\n    }")
+                    
+                    # Limit results
+                    query_parts.append("\n    LIMIT 100")
+                    
+                    # Execute the query
+                    sparql_query = ''.join(query_parts)
+                    self.logger.info(f"Executing RDF filter_by_multiple: {sparql_query}")
+                    
+                    results = conn.execute_query(sparql_query)
+                    
+                    if not results:
+                        return {
+                            'success': True,
+                            'results': [],
+                            'count': 0,
+                            'message': 'No movies found matching the filters'
+                        }
+                    
+                    self.logger.info(f"Found {len(results)} matching movies")
+                    return {
+                        'success': True,
+                        'results': results,
+                        'count': len(results)
+                    }
+                
                 else:
                     self.logger.error(f"Unknown RDF operation: {operation}")
                     return {'success': False, 'error': f'Unknown operation: {operation}'}
@@ -1115,6 +1660,152 @@ class QueryExecutor:
                     'success': True,
                     'results': [{'updated': updated, 'row_key': row_key, 'updates': updates, 'title': title}],
                     'count': 1
+                }
+            
+            elif operation == 'filter_by_genre':
+                # Filter movies by genre
+                genre = query_dict.get('genre', '')
+                if not genre:
+                    return {'success': False, 'error': 'filter_by_genre requires genre'}
+                
+                # Scan all movies and filter by genre
+                results = conn.scan(table, columns=[], limit=1000)
+                filtered_results = []
+                
+                for row in results:
+                    data = row.get('data', {})
+                    genres = data.get('metadata:genres', '')
+                    if genre.lower() in genres.lower():
+                        filtered_results.append(row)
+                        if len(filtered_results) >= 10:
+                            break
+                
+                self.logger.info(f"Found {len(filtered_results)} movies in genre '{genre}'")
+                return {
+                    'success': True,
+                    'results': filtered_results,
+                    'count': len(filtered_results)
+                }
+            
+            elif operation == 'filter_by_director':
+                # Filter movies by director
+                director = query_dict.get('director', '')
+                if not director:
+                    return {'success': False, 'error': 'filter_by_director requires director'}
+                
+                # Scan all movies and filter by director
+                results = conn.scan(table, columns=[], limit=1000)
+                filtered_results = []
+                
+                for row in results:
+                    data = row.get('data', {})
+                    directors = data.get('people:directors', '')
+                    if director.lower() in directors.lower():
+                        filtered_results.append(row)
+                        if len(filtered_results) >= 10:
+                            break
+                
+                self.logger.info(f"Found {len(filtered_results)} movies by director '{director}'")
+                return {
+                    'success': True,
+                    'results': filtered_results,
+                    'count': len(filtered_results)
+                }
+            
+            elif operation == 'filter_by_cast':
+                # Filter movies by actor/cast
+                actor = query_dict.get('actor', '')
+                if not actor:
+                    return {'success': False, 'error': 'filter_by_cast requires actor'}
+                
+                # Scan all movies and filter by cast
+                results = conn.scan(table, columns=[], limit=1000)
+                filtered_results = []
+                
+                for row in results:
+                    data = row.get('data', {})
+                    cast = data.get('people:cast', '')
+                    if actor.lower() in cast.lower():
+                        filtered_results.append(row)
+                        if len(filtered_results) >= 10:
+                            break
+                
+                self.logger.info(f"Found {len(filtered_results)} movies with actor '{actor}'")
+                return {
+                    'success': True,
+                    'results': filtered_results,
+                    'count': len(filtered_results)
+                }
+            
+            elif operation == 'filter_by_year':
+                # Filter movies by year
+                year = query_dict.get('year', '')
+                if not year:
+                    return {'success': False, 'error': 'filter_by_year requires year'}
+                
+                # Scan all movies and filter by year
+                results = conn.scan(table, columns=[], limit=1000)
+                filtered_results = []
+                
+                for row in results:
+                    data = row.get('data', {})
+                    movie_year = data.get('info:year', '')
+                    if str(year) == str(movie_year):
+                        filtered_results.append(row)
+                        if len(filtered_results) >= 10:
+                            break
+                
+                self.logger.info(f"Found {len(filtered_results)} movies from year {year}")
+                return {
+                    'success': True,
+                    'results': filtered_results,
+                    'count': len(filtered_results)
+                }
+            
+            elif operation == 'filter_by_multiple':
+                # Filter movies by multiple criteria
+                filters = query_dict.get('filters', {})
+                if not filters:
+                    return {'success': False, 'error': 'filter_by_multiple requires filters dict'}
+                
+                genre_filter = filters.get('genre', '').lower()
+                year_filter = str(filters.get('year', '')) if 'year' in filters else None
+                actor_filter = filters.get('actor', '').lower()
+                director_filter = filters.get('director', '').lower()
+                
+                # Scan all movies and apply all filters
+                results = conn.scan(table, columns=[], limit=1000)
+                filtered_results = []
+                
+                for row in results:
+                    data = row.get('data', {})
+                    
+                    # Check all filters - all must pass
+                    if genre_filter and genre_filter not in data.get('metadata:genres', '').lower():
+                        continue
+                    
+                    if year_filter and str(data.get('info:year', '')) != year_filter:
+                        continue
+                    
+                    if actor_filter and actor_filter not in data.get('people:cast', '').lower():
+                        continue
+                    
+                    if director_filter and director_filter not in data.get('people:directors', '').lower():
+                        continue
+                    
+                    # All filters passed
+                    filtered_results.append(row)
+                    if len(filtered_results) >= 10:
+                        break
+                
+                if not filtered_results:
+                    return {'success': False, 'error': f'No movies found matching filters: {filters}'}
+                
+                self.logger.info(f"Found {len(filtered_results)} movies matching filters: {filters}")
+                return {
+                    'success': True,
+                    'results': filtered_results,
+                    'count': len(filtered_results)
                 }
             
             elif operation == 'delete':

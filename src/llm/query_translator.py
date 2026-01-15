@@ -244,19 +244,31 @@ CRUD Operations:
 - IMPORTANT: Detect keywords "update", "change", "modify", "set" → use "update_node"
 - IMPORTANT: Detect keywords "delete", "remove" → use "delete_node"
 - IMPORTANT: Detect keywords "create", "add", "insert" → use "create_node"
+- IMPORTANT: Detect single filter queries (genre OR year OR director OR actor only) → use specific filter operation
+- IMPORTANT: Detect queries with multiple conditions (genre+year, director+year, etc.) → use operation: "filter_by_multiple"
 - update_node: Update properties of a node (requires label, match_properties, update_properties)
 - delete_node: Delete a node and its relationships (requires label, properties)
 - create_node: Create a new node (requires label, properties)
 - create_relationship: Create a relationship between nodes
+- filter_by_genre: Filter by genre only (requires genre)
+- filter_by_year: Filter by year only (requires year)
+- filter_by_director: Filter by director only (requires director)
+- filter_by_cast: Filter by actor only (requires actor)
+- filter_by_multiple: Filter by multiple criteria (requires filters dict with any combination of: genre, director, actor, year)
 - IMPORTANT: genres field must ALWAYS be an array like ["Action"], never just "Action"
 - IMPORTANT: year field must be a number, not a string
 
 Examples:
 1. "Find all movies" → {{"cypher": "MATCH (m:Movie) OPTIONAL MATCH (d:Person)-[:DIRECTED]->(m) OPTIONAL MATCH (a:Person)-[:ACTED_IN]->(m) RETURN m, collect(DISTINCT d.name) as directors, collect(DISTINCT a.name) as cast LIMIT 10", "parameters": {{}}, "explanation": "Find all movies with directors and cast"}}
-2. "Update The Birth of a Nation genre to Action" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "The Birth of a Nation"}}, "update_properties": {{"genres": ["Action"]}}, "explanation": "Update movie genre to Action"}}
-3. "Change Inception rating to 9.5" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "Inception"}}, "update_properties": {{"imdb_rating": 9.5}}, "explanation": "Update movie rating"}}
-4. "Add film Influencers from 2025" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Create new movie node"}}
-5. "Delete the movie Titanic" → {{"operation": "delete_node", "label": "Movie", "properties": {{"title": "Titanic"}}, "explanation": "Delete movie node and its relationships"}}
+2. "Drama movies" → {{"operation": "filter_by_genre", "genre": "Drama", "explanation": "Filter movies by Drama genre"}}
+3. "Movies from 1927" → {{"operation": "filter_by_year", "year": 1927, "explanation": "Filter movies from 1927"}}
+4. "Movies by Frank Borzage" → {{"operation": "filter_by_director", "director": "Frank Borzage", "explanation": "Filter movies by director Frank Borzage"}}
+5. "Drama movies from 1925" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1925}}, "explanation": "Filter Drama movies from 1925"}}
+6. "Movies by Frank Borzage from 1927" → {{"operation": "filter_by_multiple", "filters": {{"director": "Frank Borzage", "year": 1927}}, "explanation": "Filter movies by Frank Borzage from 1927"}}
+7. "Update The Birth of a Nation genre to Action" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "The Birth of a Nation"}}, "update_properties": {{"genres": ["Action"]}}, "explanation": "Update movie genre to Action"}}
+8. "Change Inception rating to 9.5" → {{"operation": "update_node", "label": "Movie", "match_properties": {{"title": "Inception"}}, "update_properties": {{"imdb_rating": 9.5}}, "explanation": "Update movie rating"}}
+9. "Add film Influencers from 2025" → {{"operation": "create_node", "label": "Movie", "properties": {{"title": "Influencers", "year": 2025, "genres": ["Documentary"]}}, "explanation": "Create new movie node"}}
+10. "Delete the movie Titanic" → {{"operation": "delete_node", "label": "Movie", "properties": {{"title": "Titanic"}}, "explanation": "Delete movie node and its relationships"}}
 
 IMPORTANT: 
 - Always use OPTIONAL MATCH to fetch directors and cast
@@ -330,9 +342,10 @@ Common Redis Commands:
 - LRANGE key 0 -1 - all list elements
 
 Special Query Operations:
-- For genre queries: {{"operation": "filter_by_genre", "genre": "Action", "explanation": "Find movies in Action genre"}}
-- For cast queries: {{"operation": "filter_by_cast", "actor": "Tom Hanks", "explanation": "Find movies with Tom Hanks"}}
-- For director queries: {{"operation": "filter_by_director", "director": "Christopher Nolan", "explanation": "Find movies by Christopher Nolan"}}
+- For single filter queries: {{"operation": "filter_by_genre", "genre": "Action", "explanation": "..."}}
+- For multiple filter queries: {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1927}}, "explanation": "..."}}
+- Available filters: genre, year, director, actor (for cast)
+- Always use filter_by_multiple when query has 2 or more conditions (genre+year, director+year, etc.)
 
 CRUD Operations:
 - IMPORTANT: Detect "show", "find", "get", "display" + movie title → use operation: "find"
@@ -357,14 +370,16 @@ Examples:
 3. "Action movies" → {{"operation": "filter_by_genre", "genre": "Action", "explanation": "Find Action movies"}}
 4. "Movies with Tom Hanks" → {{"operation": "filter_by_cast", "actor": "Tom Hanks", "explanation": "Find movies with Tom Hanks"}}
 5. "Movies by Christopher Nolan" → {{"operation": "filter_by_director", "director": "Christopher Nolan", "explanation": "Find movies by Christopher Nolan"}}
-6. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
-7. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
-8. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
-9. "Insert movie Test with year 2020 and genre Action" → {{"operation": "create", "title": "Test", "year": 2020, "genres": "Action", "explanation": "Create new movie"}}
-10. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-11. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-12. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genres", "value": "Action", "explanation": "Update movie genre"}}
-13. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+6. "Drama movies from 1927" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1927}}, "explanation": "Find Drama movies from 1927"}}
+7. "Action films with Tom Hanks from 2010" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Action", "actor": "Tom Hanks", "year": 2010}}, "explanation": "Find Action movies with Tom Hanks from 2010"}}
+8. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
+9. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
+10. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+11. "Insert movie Test with year 2020 and genre Action" → {{"operation": "create", "title": "Test", "year": 2020, "genres": "Action", "explanation": "Create new movie"}}
+12. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+13. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+14. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genres", "value": "Action", "explanation": "Update movie genre"}}
+15. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 
@@ -435,17 +450,26 @@ CRUD Operations:
 - IMPORTANT: Detect "show", "find", "get", "display" + movie title → use operation: "find"
 - IMPORTANT: Detect "add", "insert", "create" → use operation: "create"
 - IMPORTANT: Detect "delete", "remove" → use operation: "delete" OR "find_and_delete"
-- IMPORTANT: Detect "update", "change", "modify" → use operation: "update" OR "find_and_update"
+- IMPORTANT: Detect "update", "change", "modify" → use operation: "put" OR "find_and_update"
+- IMPORTANT: Detect single filter queries (genre OR year OR director OR actor only) → use specific filter operation
+- IMPORTANT: Detect queries with multiple conditions (genre+year, director+year, etc.) → use operation: "filter_by_multiple"
 - find: Find a movie by title (requires title)
 - create: Create a new movie (requires title, year, and optionally genres, plot, rating)
 - delete: Delete all triples for a subject (requires subject URI)
 - update: Update a triple value (requires subject, predicate, old_value, new_value)
 - find_and_delete: Find movie by title and delete (requires title)
 - find_and_update: Find movie by title and update field (requires title, field, value)
+- filter_by_genre: Filter by genre only (requires genre)
+- filter_by_year: Filter by year only (requires year)
+- filter_by_director: Filter by director only (requires director)
+- filter_by_cast: Filter by actor only (requires actor)
+- filter_by_multiple: Filter by multiple criteria (requires filters dict with any combination of: genre, director, actor, year)
 
 NOTE: For CRUD by movie title (not full URI), use find_and_delete or find_and_update operations.
 The system will first query to find the movie URI, then perform the operation.
 Movie URIs follow pattern: http://example.org/movie/Title_With_Underscores
+
+For queries with multiple filter conditions, ALWAYS use filter_by_multiple instead of constructing complex SPARQL filters.
 
 Query Pattern Template (IMPORTANT - Follow this exactly):
 PREFIX ex: <http://example.org/>
@@ -458,7 +482,7 @@ WHERE {{
   OPTIONAL {{ ?movie ex:imdbRating ?rating }}
   OPTIONAL {{ ?movie ex:hasGenre ?g . ?g ex:name ?genreName }}
   OPTIONAL {{ ?movie ex:directedBy ?d . ?d ex:name ?directorName }}
-  OPTIONAL {{ ?movie ex:hasActor ?a . ?a ex:name ?actorName }}
+  OPTIONAL {{ ?movie ex:starring ?a . ?a ex:name ?actorName }}
 }}
 LIMIT 100
 
@@ -468,15 +492,20 @@ For ADD/INSERT/CREATE operations, always use operation: "create".
 For SHOW/FIND/GET movie by title, always use operation: "find".
 
 Examples:
-1. "Find all movies" → {{"sparql": "PREFIX ex: <http://example.org/>\\nSELECT ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{ ?movie a ex:Movie ; ex:title ?title ; ex:year ?year . OPTIONAL {{ ?movie ex:plot ?plot }} OPTIONAL {{ ?movie ex:imdbRating ?rating }} OPTIONAL {{ ?movie ex:hasGenre ?g . ?g ex:name ?genreName }} OPTIONAL {{ ?movie ex:directedBy ?d . ?d ex:name ?directorName }} OPTIONAL {{ ?movie ex:hasActor ?a . ?a ex:name ?actorName }} }} LIMIT 100", "explanation": "Find all movies"}}
-2. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
-3. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
-4. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
-5. "Insert movie Test with year 2020" → {{"operation": "create", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
-6. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-7. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-8. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
-9. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+1. "Find all movies" → {{"sparql": "PREFIX ex: <http://example.org/>\\nSELECT ?title ?year ?plot ?rating ?genreName ?directorName ?actorName WHERE {{ ?movie a ex:Movie ; ex:title ?title ; ex:year ?year . OPTIONAL {{ ?movie ex:plot ?plot }} OPTIONAL {{ ?movie ex:imdbRating ?rating }} OPTIONAL {{ ?movie ex:hasGenre ?g . ?g ex:name ?genreName }} OPTIONAL {{ ?movie ex:directedBy ?d . ?d ex:name ?directorName }} OPTIONAL {{ ?movie ex:starring ?a . ?a ex:name ?actorName }} }} LIMIT 100", "explanation": "Find all movies"}}
+2. "Drama movies" → {{"operation": "filter_by_genre", "genre": "Drama", "explanation": "Find all Drama movies"}}
+3. "Movies from 1927" → {{"operation": "filter_by_year", "year": 1927, "explanation": "Find all movies from 1927"}}
+4. "Movies by Frank Borzage" → {{"operation": "filter_by_director", "director": "Frank Borzage", "explanation": "Find all movies by Frank Borzage"}}
+5. "Drama movies from 1925" → {{"operation": "filter_by_multiple", "filters": {{"genre": "Drama", "year": 1925}}, "explanation": "Find Drama movies from 1925"}}
+6. "Movies by Frank Borzage from 1927" → {{"operation": "filter_by_multiple", "filters": {{"director": "Frank Borzage", "year": 1927}}, "explanation": "Find movies by Frank Borzage from 1927"}}
+7. "Show me the details of Influencers" → {{"operation": "find", "title": "Influencers", "explanation": "Find movie by title"}}
+8. "Get movie Inception" → {{"operation": "find", "title": "Inception", "explanation": "Find movie by title"}}
+9. "Add film Influencers from 2025" → {{"operation": "create", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+10. "Insert movie Test with year 2020" → {{"operation": "create", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+11. "Delete influencers" → {{"operation": "find_and_delete", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+12. "Remove the movie Titanic" → {{"operation": "find_and_delete", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+13. "Change influencers genre to action" → {{"operation": "find_and_update", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+14. "Update Inception year to 2020" → {{"operation": "find_and_update", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Important: 
 - Use string literals for years like "1915", never use ^^xsd:integer
@@ -565,30 +594,44 @@ CRUD Operations:
 - IMPORTANT: Detect "add", "insert", "create" → use operation: "create"
 - IMPORTANT: Detect "delete", "remove" → use operation: "delete" OR "find_and_delete"
 - IMPORTANT: Detect "update", "change", "modify" → use operation: "put" OR "find_and_update"
+- IMPORTANT: Detect queries by genre/director/cast/year → use single filter OR filter_by_multiple for multiple conditions
 - find: Find a movie by title (requires title)
 - create: Create a new movie (requires title, year, and optionally genres, plot, rating)
 - delete: Delete a row (requires table, row_key)
 - put: Insert/update data (requires table, row_key, data with column:field format)
 - find_and_delete: Find movie by title and delete (requires title)
 - find_and_update: Find movie by title and update (requires title, updates dict OR field/value)
+- filter_by_genre: Find movies by genre (requires genre)
+- filter_by_director: Find movies by director (requires director)
+- filter_by_cast: Find movies by actor (requires actor)
+- filter_by_year: Find movies by year (requires year)
+- filter_by_multiple: Find movies by multiple criteria (requires filters dict with any combination of: genre, director, actor, year)
 
 CRITICAL: When user mentions movie by TITLE (not row_key like movie_00001), ALWAYS use find_and_delete or find_and_update.
 NEVER use delete or put for title-based operations.
 For ADD/INSERT/CREATE operations, always use operation: "create".
 For SHOW/FIND/GET movie by title, always use operation: "find".
+For queries by GENRE/DIRECTOR/CAST/YEAR with multiple conditions, use filter_by_multiple.
+For single condition queries, use the specific filter_by_* operation.
 You can also use "field" and "value" instead of "updates" for find_and_update.
 
 Examples:
 1. "Find all movies" → {{"operation": "scan", "table": "movies", "columns": [], "limit": 10, "explanation": "Scan all movies"}}
 2. "Get movie movie_00001" → {{"operation": "get", "table": "movies", "row_key": "movie_00001", "columns": [], "explanation": "Get specific movie"}}
-3. "Show me the details of Influencers" → {{"operation": "find", "table": "movies", "title": "Influencers", "explanation": "Find movie by title"}}
-4. "Get movie Inception" → {{"operation": "find", "table": "movies", "title": "Inception", "explanation": "Find movie by title"}}
-5. "Add film Influencers from 2025" → {{"operation": "create", "table": "movies", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
-6. "Insert movie Test with year 2020" → {{"operation": "create", "table": "movies", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
-7. "Delete influencers" → {{"operation": "find_and_delete", "table": "movies", "title": "Influencers", "explanation": "Find and delete movie by title"}}
-8. "Remove the movie Titanic" → {{"operation": "find_and_delete", "table": "movies", "title": "Titanic", "explanation": "Find and delete movie by title"}}
-9. "Change influencers genre to action" → {{"operation": "find_and_update", "table": "movies", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
-10. "Update Inception year to 2020" → {{"operation": "find_and_update", "table": "movies", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
+3. "Drama movies" → {{"operation": "filter_by_genre", "table": "movies", "genre": "Drama", "explanation": "Find Drama movies"}}
+4. "Movies by Frank Borzage" → {{"operation": "filter_by_director", "table": "movies", "director": "Frank Borzage", "explanation": "Find movies by Frank Borzage"}}
+5. "Films with Charles Chaplin" → {{"operation": "filter_by_cast", "table": "movies", "actor": "Charles Chaplin", "explanation": "Find movies with Charles Chaplin"}}
+6. "Movies from 1927" → {{"operation": "filter_by_year", "table": "movies", "year": 1927, "explanation": "Find movies from 1927"}}
+7. "Drama movies from 1925" → {{"operation": "filter_by_multiple", "table": "movies", "filters": {{"genre": "Drama", "year": 1925}}, "explanation": "Find Drama movies from 1925"}}
+8. "Movies by Frank Borzage from 1927" → {{"operation": "filter_by_multiple", "table": "movies", "filters": {{"director": "Frank Borzage", "year": 1927}}, "explanation": "Find movies by Frank Borzage from 1927"}}
+9. "Show me the details of Influencers" → {{"operation": "find", "table": "movies", "title": "Influencers", "explanation": "Find movie by title"}}
+10. "Get movie Inception" → {{"operation": "find", "table": "movies", "title": "Inception", "explanation": "Find movie by title"}}
+11. "Add film Influencers from 2025" → {{"operation": "create", "table": "movies", "title": "Influencers", "year": 2025, "genres": "Documentary", "explanation": "Create new movie"}}
+12. "Insert movie Test with year 2020" → {{"operation": "create", "table": "movies", "title": "Test", "year": 2020, "explanation": "Create new movie"}}
+13. "Delete influencers" → {{"operation": "find_and_delete", "table": "movies", "title": "Influencers", "explanation": "Find and delete movie by title"}}
+14. "Remove the movie Titanic" → {{"operation": "find_and_delete", "table": "movies", "title": "Titanic", "explanation": "Find and delete movie by title"}}
+15. "Change influencers genre to action" → {{"operation": "find_and_update", "table": "movies", "title": "Influencers", "field": "genre", "value": "Action", "explanation": "Update movie genre"}}
+16. "Update Inception year to 2020" → {{"operation": "find_and_update", "table": "movies", "title": "Inception", "field": "year", "value": "2020", "explanation": "Update movie year"}}
 
 Return ONLY the JSON."""
 
